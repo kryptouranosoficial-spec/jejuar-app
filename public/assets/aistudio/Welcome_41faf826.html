@@ -1,0 +1,81 @@
+<!DOCTYPE html><html class="light" lang="pt-BR" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport">
+<meta content="mobile_blank" name="shell-type">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#00C975",
+            "primary-hover": "#00B368",
+            "navy-title": "#0F172A",
+            "slate-sub": "#64748B"
+          },
+          fontFamily: {
+            sans: ["'Plus Jakarta Sans'", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    @layer base {
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overscroll-behavior-y: none;
+      }
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      }
+      .pt-safe {
+        padding-top: env(safe-area-inset-top, 12px);
+      }
+    }
+  </style>
+</head>
+<body class="bg-[#FAFCFA] text-[#0F172A] font-sans antialiased h-screen overflow-hidden flex flex-col justify-between selection:bg-[#00C975]/20 selection:text-[#00C975]">
+<main class="w-full max-w-[430px] mx-auto h-full flex flex-col justify-between px-6 pt-safe pb-safe relative">
+<!-- Top Status Bar Area -->
+
+<!-- Center Section: Logo & Welcome Titles -->
+<section class="flex flex-col items-center justify-center text-center my-auto px-2 z-10">
+<!-- App Icon Container with Soft Glow -->
+<div class="relative mb-6">
+<div class="absolute -inset-3 bg-[#00C975]/15 rounded-[36px] blur-xl"></div>
+<img alt="Jejuar Logo" class="relative w-[124px] h-[124px] object-cover rounded-3xl shadow-xl shadow-emerald-950/5 border border-white/60" src="https://lh3.googleusercontent.com/aida/AEtjO1UPLzUunRd2eIfFuLo_csEizlDBoJIq_e31yQiRIjXDcuONT6kHfAxvsacgiGaTsOkYv8xplnfhpgiC-LKmaoEpjv2zIcpq6d3z6RRAXtaeDd3HxsP3wFvP1xWPECPaOo4_A1LT8b1I4zTSG3eIxCisTZXdPHWXx-aferqfkU8NwPx1TYbRvSuAy6Hpe-wauARzVXxm9DXGEwQPXaF7RRGgUrlYY3iAiAh60zEBYNLTUsm0cuQaYXih6abA">
+</div>
+<!-- Welcome Title -->
+<h1 class="text-[30px] font-extrabold text-[#0F172A] tracking-tight leading-tight">
+        Bem-vindo ao Jejuar
+      </h1>
+<!-- Clean 1-line Subtitle -->
+<p class="text-base text-slate-500 font-medium mt-2.5 max-w-[310px] leading-relaxed">
+        Seu acompanhamento inteligente de jejum intermitente
+      </p>
+</section>
+<!-- Bottom Action Section -->
+<footer class="w-full pb-8 pt-4 flex flex-col gap-3.5 items-center z-10">
+<!-- Primary Action CTA -->
+<button class="w-full py-4 px-6 bg-[#00C975] hover:bg-[#00B368] active:scale-[0.985] text-white font-semibold text-lg rounded-full shadow-lg shadow-[#00C975]/30 flex items-center justify-between transition-all duration-200 relative" id="start-btn" type="button">
+  <span class="w-5 h-5 invisible" aria-hidden="true"></span>
+  <span class="text-center font-semibold text-lg">Começar</span>
+  <svg class="w-5 h-5 text-white stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path d="M8.25 4.5l7.5 7.5-7.5 7.5" stroke-linecap="round" stroke-linejoin="round"></path>
+  </svg>
+</button>
+<!-- Secondary Login Option -->
+
+</footer>
+</main>
+
+
+</body></html>

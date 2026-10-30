@@ -1,0 +1,6 @@
+{
+  "name": "Jejuar",
+  "description": "Aplicativo inteligente de gerenciamento de jejum intermitente e sincronização metabólica.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

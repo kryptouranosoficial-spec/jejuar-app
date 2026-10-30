@@ -1,0 +1,51 @@
+name: Compilar APK Android (Jejuar)
+
+on:
+  workflow_dispatch: # Permite disparar manualmente com 1 clique na aba Actions
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-apk:
+    name: Gerar APK de Teste
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar ambiente Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Configurar Java JDK 17 (Exigido pelo Android SDK moderno)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 4. Instalar dependências do projeto
+        run: npm ci || npm install
+
+      - name: 5. Compilar o aplicativo Web (Vite)
+        run: npm run build
+
+      - name: 6. Sincronizar arquivos compilados com o Android (Capacitor)
+        run: npx cap sync android
+
+      - name: 7. Compilar o arquivo APK nativo com Gradle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 8. Disponibilizar o arquivo APK para Download
+        uses: actions/upload-artifact@v4
+        with:
+          name: jejuar-app-teste
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  html,
+  body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Classes utilitárias para áreas seguras de aparelhos com notch/gestos */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 16px);
+  }
+}
+
+/* Esconder barra de rolagem mantendo funcionalidade */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mostrador dos badges de relógio de protocolos (16:8, 18:6, 20:4) */
+.dial-face {
+  position: relative;
+  background: radial-gradient(circle, #ffffff 68%, rgba(255, 255, 255, 0.88) 100%);
+}
+
+.dial-tick {
+  position: absolute;
+  width: 2px;
+  height: 4px;
+  left: calc(50% - 1px);
+  top: 3px;
+  opacity: 0.4;
+}
+
+.tick-green { background-color: #2e7d32; }
+.tick-orange { background-color: #c25e00; }
+.tick-blue { background-color: #1e40af; }
+

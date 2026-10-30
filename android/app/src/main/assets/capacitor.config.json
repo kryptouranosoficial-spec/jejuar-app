@@ -1,0 +1,16 @@
+{
+	"appId": "com.jejuar.app",
+	"appName": "Jejuar",
+	"webDir": "dist",
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon_config_sample",
+			"iconColor": "#00C975",
+			"sound": "beep.wav"
+		}
+	},
+	"server": {
+		"androidScheme": "https",
+		"cleartext": true
+	}
+}

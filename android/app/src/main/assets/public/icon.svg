@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Sombra Suave de Fundo -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#00C975" flood-opacity="0.18" />
+    </filter>
+
+    <!-- Gradiente de Superfície Vítrea Branca -->
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F3F7F5" />
+    </linearGradient>
+
+    <!-- Gradiente do Anel Esmeralda 3D -->
+    <linearGradient id="ring3D" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4EEDB0" />
+      <stop offset="35%" stop-color="#00C975" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+
+    <!-- Gradiente da Chama Esmeralda -->
+    <linearGradient id="flameColor" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="50%" stop-color="#00C975" />
+      <stop offset="100%" stop-color="#34D399" />
+    </linearGradient>
+  </defs>
+
+  <!-- Cartão Base Squircle (Safe Zone com 12% de respiro para Maskable) -->
+  <rect x="36" y="36" width="440" height="440" rx="96" fill="url(#cardGrad)" stroke="#E6EEEC" stroke-width="3" filter="url(#cardShadow)" />
+
+  <!-- Anel Circular Externo -->
+  <circle cx="256" cy="225" r="115" fill="none" stroke="url(#ring3D)" stroke-width="22" stroke-linecap="round" />
+
+  <!-- Borda Dourada Estilizada da Chama -->
+  <path d="M 256 142 
+           C 272 178 300 200 304 228 
+           C 308 258 286 284 256 296 
+           C 226 284 204 258 208 228 
+           C 212 200 240 178 256 142 Z" 
+        fill="#D97706" 
+        opacity="0.4" 
+        transform="scale(1.1) translate(-25.6, -21)" />
+
+  <!-- Chama Central Esmeralda -->
+  <path d="M 256 146 
+           C 270 180 298 202 301 228 
+           C 305 256 284 280 256 292 
+           C 228 280 207 256 211 228 
+           C 214 202 242 180 256 146 Z" 
+        fill="url(#flameColor)" />
+
+  <!-- Foco de Brilho Interno da Chama -->
+  <path d="M 256 195 
+           C 264 212 280 224 282 240 
+           C 284 258 272 272 256 278 
+           C 240 272 228 258 230 240 
+           C 232 224 248 212 256 195 Z" 
+        fill="#A7F3D0" 
+        opacity="0.9" />
+
+  <!-- Nome Oficial "Jejuar" -->
+  <text x="256" y="388" 
+        text-anchor="middle" 
+        font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" 
+        font-weight="800" 
+        font-size="44" 
+        letter-spacing="-1.2" 
+        fill="#0B2246">Jejuar</text>
+</svg>

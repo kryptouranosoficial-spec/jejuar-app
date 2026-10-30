@@ -1,0 +1,6 @@
+{
+  "summary":  "Plano de implementação detalhado para o módulo de Bioimpedância e Acompanhamento de Exames Corporais, substituindo a aba Aprender no menu inferior. Inclui dashboard com métricas atuais, gráficos interativos de evolução (peso, gordura e massa muscular), histórico com cards detalhados, tela de cadastro/edição com formatações automáticas e faixas de referência clínica inspiradas no laudo Drogasil/RD Saúde, e lembrete configurável de periodicidade de reteste.",
+  "updatedAt":  "2026-10-28T12:58:45.664903670Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

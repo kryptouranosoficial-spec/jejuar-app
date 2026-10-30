@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="pt-BR" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport">
+<title>Criar Conta - Jejuar</title>
+<!-- Google Fonts: Plus Jakarta Sans -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              green: '#00C975',
+              'green-dark': '#009e5c',
+              'green-light': '#E8FBF2',
+              navy: '#0B1C30',
+              muted: '#64748B',
+              border: '#E2E8F0',
+              bgLight: '#F8FAFC'
+            }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      background-color: #F8FAFC;
+      min-height: max(884px, 100dvh);
+    }
+    .touch-target {
+      min-height: 48px;
+      min-width: 48px;
+    }
+  </style>
+<meta content="mobile_stack" name="shell-type">
+</head>
+<body class="bg-[#F8FAFC] text-brand-navy flex justify-center items-center min-h-screen p-0 sm:p-4">
+<!-- BEGIN: MobileContainer -->
+<main class="w-full max-w-[430px] h-[884px] bg-[#F8FAFC] flex flex-col justify-between overflow-hidden shadow-2xl relative sm:rounded-[36px] sm:h-[880px] sm:border sm:border-slate-100">
+<div class="flex flex-col w-full h-full justify-between">
+<!-- Top Navigation & Progress Header -->
+<header class="w-full bg-white/80 backdrop-blur-md border-b border-slate-100/80 sticky top-0 z-10">
+
+<div class="h-16 px-6 flex items-center justify-between relative">
+<button aria-label="Voltar" class="p-2 -ml-2 text-slate-700 hover:text-slate-900 active:scale-95 transition-all flex items-center justify-center rounded-full z-10" onclick="window.history.back()" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<h1 class="absolute inset-0 flex items-center justify-center font-bold text-[18px] text-brand-navy tracking-tight pointer-events-none">
+Informações da Conta
+</h1>
+<div class="w-10"></div>
+</div>
+<div class="w-full h-1 bg-slate-200/60"><div class="h-full bg-[#00C975]" style="width: 25%;"></div></div></header>
+<!-- Scrollable Main Content -->
+<div class="flex flex-col flex-1 px-6 pt-6 pb-4 overflow-y-auto">
+<!-- Badge / Context Pill -->
+<div class="flex justify-center w-full mb-6"><div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold"><span class="material-symbols-outlined text-[16px]">lock</span><span class="">Segurança da Conta</span></div></div>
+<!-- Main Title & Subtitle -->
+<div class="flex flex-col items-center text-center gap-2 mb-7"><h2 class="text-2xl font-bold text-slate-900 tracking-tight text-center">Como devemos chamar você?</h2><p class="text-slate-500 text-sm leading-relaxed text-center">Personalize sua experiência e garanta que seus dados de jejum fiquem salvos em segurança.</p></div>
+<!-- Inputs Section (Modern iOS / GoFasting Cards) -->
+<form class="flex flex-col gap-4" id="profileForm" onsubmit="event.preventDefault(); handleContinue();">
+<!-- Input 1: Nome -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[13px] font-semibold text-slate-700 ml-1 flex items-center justify-between" for="fullNameInput">
+<span class="">Seu nome</span>
+<span class="text-xs font-semibold text-emerald-600 opacity-0 transition-opacity flex items-center gap-1" id="nameStatus" style="opacity: 0;">
+<span class="material-symbols-outlined text-[15px]">check_circle</span> Pronto
+              </span>
+</label>
+<div class="relative flex items-center group">
+<div class="absolute left-4 flex items-center justify-center text-slate-400 group-focus-within:text-brand-green transition-colors pointer-events-none">
+<svg class="w-5 h-5 stroke-current" fill="none" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<input autocomplete="name" class="w-full h-[56px] pl-12 pr-4 bg-white text-brand-navy text-[15px] font-medium rounded-2xl border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.03)] placeholder:text-slate-400 focus:outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20 transition-all" id="fullNameInput" name="name" oninput="validateForm()" placeholder="Ex: Maria Clara Silva" required="" type="text">
+</div>
+</div>
+<!-- Input 2: E-mail -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[13px] font-semibold text-slate-700 ml-1 flex items-center justify-between" for="emailInput">
+<span class="">Seu melhor e-mail</span>
+<span class="text-xs font-semibold text-emerald-600 opacity-0 transition-opacity flex items-center gap-1" id="emailStatus" style="opacity: 0;">
+<span class="material-symbols-outlined text-[15px]">check_circle</span> Válido
+              </span>
+</label>
+<div class="relative flex items-center group">
+<div class="absolute left-4 flex items-center justify-center text-slate-400 group-focus-within:text-brand-green transition-colors pointer-events-none">
+<svg class="w-5 h-5 stroke-current" fill="none" stroke-width="1.8" viewBox="0 0 24 24">
+<path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<input autocomplete="email" class="w-full h-[56px] pl-12 pr-4 bg-white text-brand-navy text-[15px] font-medium rounded-2xl border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.03)] placeholder:text-slate-400 focus:outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20 transition-all" id="emailInput" name="email" oninput="validateForm()" placeholder="seuemail@exemplo.com" required="" type="email">
+</div>
+</div>
+<!-- Privacy & Assurance Card -->
+<div class="mt-3 p-4 bg-white/80 rounded-2xl border border-slate-200/60 shadow-xs flex items-center gap-3.5">
+<div class="w-10 h-10 rounded-full bg-emerald-50 text-brand-green flex items-center justify-center shrink-0 border border-emerald-100">
+<svg class="w-5 h-5 stroke-current" fill="none" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<p class="text-[13px] text-slate-600 leading-relaxed font-normal">
+<span class="font-semibold text-slate-800">Seus dados estão protegidos.</span> Nunca compartilharemos suas informações com terceiros.
+            </p>
+</div>
+</form>
+</div>
+<!-- Bottom Action CTA -->
+<footer class="w-full px-6 pb-7 pt-4 bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent flex flex-col items-center gap-3">
+<button class="w-full h-[56px] bg-[#00C975] hover:bg-[#00B167] active:scale-[0.98] text-white font-bold text-[16px] rounded-full flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all cursor-pointer opacity-60" id="submitButton" onclick="handleContinue()" type="button">
+<span class="">Próximo</span>
+<span class="material-symbols-outlined text-[20px] transition-transform group-hover:translate-x-1">arrow_forward</span>
+</button>
+<!-- iOS Home Indicator -->
+<div class="w-32 h-1 bg-slate-300/60 rounded-full mt-1"></div>
+</footer>
+</div>
+</main>
+<!-- END: MobileContainer -->
+<script>
+    function validateForm() {
+      const nameInput = document.getElementById('fullNameInput');
+      const emailInput = document.getElementById('emailInput');
+      const nameStatus = document.getElementById('nameStatus');
+      const emailStatus = document.getElementById('emailStatus');
+      const submitBtn = document.getElementById('submitButton');
+
+      const isNameValid = nameInput.value.trim().length >= 3;
+      const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim());
+
+      if (nameStatus) {
+        nameStatus.style.opacity = isNameValid ? '1' : '0';
+      }
+      if (emailStatus) {
+        emailStatus.style.opacity = isEmailValid ? '1' : '0';
+      }
+
+      if (submitBtn) {
+        if (isNameValid && isEmailValid) {
+          submitBtn.classList.remove('opacity-60');
+          submitBtn.classList.add('shadow-emerald-500/30');
+        } else {
+          submitBtn.classList.add('opacity-60');
+          submitBtn.classList.remove('shadow-emerald-500/30');
+        }
+      }
+    }
+
+    function handleContinue() {
+      const nameInput = document.getElementById('fullNameInput');
+      const emailInput = document.getElementById('emailInput');
+
+      if (!nameInput.value.trim()) {
+        nameInput.focus();
+        return;
+      }
+      if (!emailInput.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim())) {
+        emailInput.focus();
+        return;
+      }
+
+      const btn = document.getElementById('submitButton');
+      btn.innerHTML = `
+        <span class="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+        <span>Salvando...</span>
+      `;
+      btn.classList.add('pointer-events-none');
+
+      setTimeout(() => {
+        btn.innerHTML = `
+          <span class="material-symbols-outlined text-[20px]">check</span>
+          <span>Perfil criado!</span>
+        `;
+      }, 600);
+    }
+
+    validateForm();
+  </script>
+
+
+
+
+</body></html>

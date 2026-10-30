@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Jejuar</string>
+    <string name="title_activity_main">Jejuar</string>
+    <string name="package_name">com.jejuar.app</string>
+    <string name="custom_url_scheme">com.jejuar.app</string>
+</resources>
