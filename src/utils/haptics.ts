@@ -71,3 +71,18 @@ export function dispararFeedbackHaptico(intensidade: 'suave' | 'medio' | 'forte'
     // Silencioso se o usuário não interagiu com a página ainda
   }
 }
+
+/**
+ * Dispara feedback suave de clique
+ */
+export function vibrarClique(): void {
+  dispararFeedbackHaptico('suave');
+}
+
+/**
+ * Dispara feedback de sucesso/conquista
+ */
+export function vibrarSucesso(): void {
+  dispararFeedbackHaptico('forte');
+}
+

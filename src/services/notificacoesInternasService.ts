@@ -243,3 +243,32 @@ export async function excluirNotificacaoInterna(
 export function contarNaoLidas(lista: NotificacaoInterna[]): number {
   return lista.filter((item) => !item.lida).length;
 }
+
+/**
+ * Emite uma nova notificação interna na central do usuário de forma idempotente (evita duplicatas).
+ */
+export async function emitirNotificacaoInterna(
+  usuarioId: string,
+  notificacao: NotificacaoInterna
+): Promise<void> {
+  const atuais = obterCacheLocal(usuarioId);
+  if (atuais.some((item) => item.id === notificacao.id)) {
+    return; // Já existe, evita duplicidade
+  }
+
+  const atualizadas = [notificacao, ...atuais];
+  salvarCacheLocal(usuarioId, atualizadas);
+
+  if (usuarioId) {
+    try {
+      const docRef = doc(db, 'usuarios', usuarioId, 'notificacoes_internas', notificacao.id);
+      await setDoc(docRef, {
+        ...notificacao,
+        criadoEm: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('[Notificações] Aviso ao emitir notificação interna no Firestore:', err);
+    }
+  }
+}
+

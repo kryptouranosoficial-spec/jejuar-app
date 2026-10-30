@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { Flame, Sliders, Bell } from 'lucide-react';
+import { vibrarClique } from '../utils/haptics';
 
 interface AppHeaderProps {
   /** Quantidade de dias consecutivos no aplicativo (padrão: 1) */
@@ -22,6 +23,8 @@ interface AppHeaderProps {
   onAbrirCalendario?: () => void;
   /** Callback acionado ao clicar no botão de configurações/ajustes */
   onAbrirAjustes?: () => void;
+  /** Callback acionado ao tocar na badge de sequência para ver o Posicionamento de Resiliência */
+  onAbrirResiliencia?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -31,6 +34,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   totalNaoLidas = 0,
   onAbrirCalendario,
   onAbrirAjustes,
+  onAbrirResiliencia,
 }) => {
   return (
     <header 
@@ -52,14 +56,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       {/* Ações da Barra Superior (Badge de Fogo, Calendário com Dia, Ajustes) */}
       <div className="flex items-center gap-2.5" data-purpose="header-actions">
-        {/* Badge de Dias Consecutivos */}
-        <div 
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100/70 border border-blue-50/50 shadow-xs text-xs font-semibold text-[#0B2246]"
+        {/* Badge Interativa de Dias Consecutivos (Posicionamento de Resiliência) */}
+        <button 
+          type="button"
+          onClick={() => {
+            vibrarClique();
+            if (onAbrirResiliencia) onAbrirResiliencia();
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100/70 hover:bg-blue-200/60 border border-blue-50/50 shadow-xs text-xs font-semibold text-[#0B2246] active:scale-95 transition-all cursor-pointer min-h-[36px]"
           data-purpose="day-counter-badge"
+          title="Toque para ver seu Posicionamento de Resiliência (Top %)"
+          aria-label={`Sequência: Dia ${diasConsecutivos}. Toque para ver seu status na comunidade.`}
         >
           <Flame className="w-4 h-4 text-[#00C975] fill-[#00C975]" />
           <span className="font-bold text-[#0B2246]">Dia {diasConsecutivos}</span>
-        </div>
+        </button>
 
         {/* Botão de Notificações / Central de Notificações */}
         <button 

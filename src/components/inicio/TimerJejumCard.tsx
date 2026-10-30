@@ -6,8 +6,9 @@
  */
 
 import React from 'react';
-import { Trophy, Utensils, Clock, CheckCircle2, Pencil } from 'lucide-react';
+import { Trophy, Utensils, Clock, CheckCircle2, Pencil, Flame, History, Sparkles } from 'lucide-react';
 import type { ProtocoloJejum } from '../../data/planosJejumData';
+import { ContadorMetabolicoColetivo } from './ContadorMetabolicoColetivo';
 
 interface HorariosInfo {
   rotuloInicio: string;
@@ -37,6 +38,12 @@ interface TimerJejumCardProps {
   onAcaoPrincipal: () => void;
   onEditarHorarioInicio: () => void;
   formatarTempo: (totalSegundos: number) => string;
+  /** Callback opcional para acionar o protocolo SOS Fome */
+  onAbrirSOSFome?: () => void;
+  /** Callback opcional para início retroativo com 1 toque */
+  onIniciarRetroativo?: (dataRetroativa: Date) => void;
+  /** Callback opcional para abrir a trava anti-esquecimento */
+  onAbrirTravaAntiEsquecimento?: () => void;
 }
 
 export const TimerJejumCard: React.FC<TimerJejumCardProps> = ({
@@ -57,6 +64,9 @@ export const TimerJejumCard: React.FC<TimerJejumCardProps> = ({
   onAcaoPrincipal,
   onEditarHorarioInicio,
   formatarTempo,
+  onAbrirSOSFome,
+  onIniciarRetroativo,
+  onAbrirTravaAntiEsquecimento,
 }) => {
   return (
     <section 
@@ -69,6 +79,25 @@ export const TimerJejumCard: React.FC<TimerJejumCardProps> = ({
       }`}
       data-purpose="fasting-timer-card"
     >
+      {/* Barra superior sutil com atalho de SOS Fome */}
+      {jejumAtivo && onAbrirSOSFome && (
+        <div className="w-full flex items-center justify-between mb-2 px-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Queima Celular Ativa
+          </span>
+          <button
+            type="button"
+            onClick={onAbrirSOSFome}
+            className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 active:scale-95 px-3 py-1.5 rounded-full border border-rose-200/60 flex items-center gap-1.5 transition-all cursor-pointer min-h-[36px]"
+            title="Protocolo de alívio para fome passageira"
+          >
+            <Flame className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+            <span>Sentindo fome? SOS</span>
+          </button>
+        </div>
+      )}
+
       {/* Container Central com o Anel de Progresso Circular */}
       <div className="relative w-full aspect-square max-w-[290px] mx-auto flex flex-col items-center justify-center p-2 mb-2">
         {/* SVG do Anel Decorativo e Trilha de Progresso */}
@@ -279,6 +308,38 @@ export const TimerJejumCard: React.FC<TimerJejumCardProps> = ({
             <span>Encerrar jejum</span>
           )}
         </button>
+
+        {/* Alerta inteligente de Esqueceu o Timer Ligado (Anti What-the-Hell Effect) */}
+        {jejumAtivo && metaAlcancada && segundosExtra > 7200 && onAbrirTravaAntiEsquecimento && (
+          <button
+            type="button"
+            onClick={onAbrirTravaAntiEsquecimento}
+            className="relative z-10 mt-2.5 px-3.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-xs min-h-[38px]"
+          >
+            <History className="w-3.5 h-3.5 text-amber-600" />
+            <span>Esqueceu o timer ligado? Ajustar término</span>
+          </button>
+        )}
+
+        {/* Sugestão de Início Retroativo com 1 Toque */}
+        {!jejumAtivo && !emJanelaAlimentacao && onIniciarRetroativo && (
+          <button
+            type="button"
+            onClick={() => {
+              const agora = new Date();
+              const retro = new Date();
+              if (agora.getHours() < 20) {
+                retro.setDate(retro.getDate() - 1);
+              }
+              retro.setHours(20, 0, 0, 0);
+              onIniciarRetroativo(retro);
+            }}
+            className="relative z-10 mt-2.5 px-3.5 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer min-h-[38px]"
+          >
+            <History className="w-3.5 h-3.5 text-slate-500" />
+            <span>Jantou às 20h? Iniciar retroativo</span>
+          </button>
+        )}
       </div>
 
       {/* Indicadores Dinâmicos de Horário de Início e Término */}
@@ -337,6 +398,13 @@ export const TimerJejumCard: React.FC<TimerJejumCardProps> = ({
           </span>
         </div>
       )}
+
+      {/* Indicador de Prova Social e Comunidade Silenciosa no Rodapé do Card */}
+      <ContadorMetabolicoColetivo
+        jejumAtivo={jejumAtivo}
+        emJanelaAlimentacao={emJanelaAlimentacao}
+        segundosJejum={segundosJejum}
+      />
     </section>
   );
 };

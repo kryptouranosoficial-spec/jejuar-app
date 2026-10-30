@@ -21,6 +21,7 @@ import {
   salvarConfiguracoesJejumFirestore,
   CONFIGURACAO_JEJUM_PADRAO 
 } from '../../services/firebase';
+import { agendarNotificacoesProcessoJejum } from '../../services/localNotificationService';
 import { ModalHoraInicioJejum } from './ModalHoraInicioJejum';
 import { NotificacoesScreen } from './NotificacoesScreen';
 
@@ -58,6 +59,21 @@ export const ConfiguracoesJejumScreen: React.FC<ConfiguracoesJejumScreenProps> =
         const dadosSalvos = await buscarConfiguracoesJejumFirestore(usuario?.id || '');
         if (ativo) {
           setConfig(dadosSalvos);
+
+          // Re-agenda as notificações nativas do processo de jejum no celular
+          const emJejumStr = typeof window !== 'undefined' ? localStorage.getItem('jejuar_em_jejum') : null;
+          const emJejum = emJejumStr === 'true';
+          const inicioIso = typeof window !== 'undefined' ? localStorage.getItem('jejuar_inicio_jejum_timestamp') : null;
+          const dataInicio = inicioIso ? new Date(inicioIso) : null;
+
+          if (dadosSalvos.notificacoes) {
+            agendarNotificacoesProcessoJejum({
+              config: dadosSalvos.notificacoes,
+              horaInicioDiaria: dadosSalvos.horaInicioDiaria,
+              emJejum,
+              dataInicio,
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('Aviso ao carregar configurações de jejum:', err);
@@ -97,6 +113,19 @@ export const ConfiguracoesJejumScreen: React.FC<ConfiguracoesJejumScreenProps> =
   // Salva nova hora de início diária
   const handleSalvarNovaHoraInicio = (novaHora: string) => {
     atualizarConfiguracao({ horaInicioDiaria: novaHora });
+
+    // Sincroniza agendamentos nativos no Android/Capacitor
+    const emJejumStr = typeof window !== 'undefined' ? localStorage.getItem('jejuar_em_jejum') : null;
+    const emJejum = emJejumStr === 'true';
+    const inicioIso = typeof window !== 'undefined' ? localStorage.getItem('jejuar_inicio_jejum_timestamp') : null;
+    const dataInicio = inicioIso ? new Date(inicioIso) : null;
+
+    agendarNotificacoesProcessoJejum({
+      config: config.notificacoes,
+      horaInicioDiaria: novaHora,
+      emJejum,
+      dataInicio,
+    }).catch(() => {});
   };
 
   // Atualiza subcampo das notificações
@@ -106,6 +135,19 @@ export const ConfiguracoesJejumScreen: React.FC<ConfiguracoesJejumScreenProps> =
       ...subcampos,
     };
     atualizarConfiguracao({ notificacoes: novasNotificacoes });
+
+    // Sincroniza agendamentos nativos no Android/Capacitor
+    const emJejumStr = typeof window !== 'undefined' ? localStorage.getItem('jejuar_em_jejum') : null;
+    const emJejum = emJejumStr === 'true';
+    const inicioIso = typeof window !== 'undefined' ? localStorage.getItem('jejuar_inicio_jejum_timestamp') : null;
+    const dataInicio = inicioIso ? new Date(inicioIso) : null;
+
+    agendarNotificacoesProcessoJejum({
+      config: novasNotificacoes,
+      horaInicioDiaria: config.horaInicioDiaria,
+      emJejum,
+      dataInicio,
+    }).catch(() => {});
   };
 
   // Subtela de Notificações

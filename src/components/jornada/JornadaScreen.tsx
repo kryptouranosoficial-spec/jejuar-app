@@ -21,6 +21,8 @@ import { CardGraficoEvolucaoPeso } from './CardGraficoEvolucaoPeso';
 import { CardGraficoImc } from './CardGraficoImc';
 import { CardGraficoIngestaoAgua } from './CardGraficoIngestaoAgua';
 import { CardGraficoMedidasCorporais } from './CardGraficoMedidasCorporais';
+import { CardCorrelacaoMetabolica } from './CardCorrelacaoMetabolica';
+import { ModalRelatorioSemanal } from './ModalRelatorioSemanal';
 import { EditarJejunsScreen } from './EditarJejunsScreen';
 import { EditarPesoScreen } from './EditarPesoScreen';
 import { EditarAguaScreen } from './EditarAguaScreen';
@@ -92,6 +94,7 @@ export const JornadaScreen: React.FC<JornadaScreenProps> = ({
 
   // Modais de ação
   const [modalAnotacaoAberto, setModalAnotacaoAberto] = useState(false);
+  const [modalRelatorioSemanalAberto, setModalRelatorioSemanalAberto] = useState(false);
 
   // Toast de confirmação
   const [toastConfig, setToastConfig] = useState({
@@ -221,6 +224,14 @@ export const JornadaScreen: React.FC<JornadaScreenProps> = ({
         </div>
       </div>
 
+      {/* CARD DA MATRIZ METABÓLICA (Fosso de Dados & Projeção Pessoal) */}
+      <CardCorrelacaoMetabolica
+        diasConsecutivos={diasConsecutivos}
+        pesoAtualKg={pesoAtual}
+        metaAguaMl={metaAguaDiaria}
+        onAbrirRelatorioSemanal={() => setModalRelatorioSemanalAberto(true)}
+      />
+
       {/* CARD 1: Gráfico de Jejum Diário */}
       <CardGraficoJejumDiario
         historicoJejuns={historicoJejuns}
@@ -292,6 +303,15 @@ export const JornadaScreen: React.FC<JornadaScreenProps> = ({
         aberto={modalAnotacaoAberto}
         onSalvar={handleSalvarAnotacao}
         onFechar={() => setModalAnotacaoAberto(false)}
+      />
+
+      {/* Modal do Relatório Semanal de Transformação */}
+      <ModalRelatorioSemanal
+        aberto={modalRelatorioSemanalAberto}
+        diasConsecutivos={diasConsecutivos}
+        pesoAtualKg={pesoAtual}
+        pesoMetaKg={pesoMeta}
+        onFechar={() => setModalRelatorioSemanalAberto(false)}
       />
     </div>
   );

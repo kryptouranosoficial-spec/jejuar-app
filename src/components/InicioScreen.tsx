@@ -38,6 +38,10 @@ import { ToastSucesso } from './ToastSucesso';
 import { DadosCorporaisScreen } from './DadosCorporaisScreen';
 import { ConfiguracoesJejumScreen } from './configuracoes/ConfiguracoesJejumScreen';
 import { TimerJejumCard } from './inicio/TimerJejumCard';
+import { AneisMetabolicosTriplos } from './inicio/AneisMetabolicosTriplos';
+import { ModalSOSFome } from './inicio/ModalSOSFome';
+import { ModalTravaAntiEsquecimento } from './inicio/ModalTravaAntiEsquecimento';
+import { ModalResilienciaConsistencia } from './inicio/ModalResilienciaConsistencia';
 import { BannerEstagioMetabolico } from './inicio/BannerEstagioMetabolico';
 import { CardDicaDoDia } from './inicio/CardDicaDoDia';
 import { GridTarefasDiarias } from './inicio/GridTarefasDiarias';
@@ -48,7 +52,17 @@ import { CarrosselDicasDoDia } from './inicio/CarrosselDicasDoDia';
 import type { ConquistaUsuario } from '../types';
 import { calcularConquistasUsuario } from '../utils/conquistasUtils';
 import { CentralNotificacoesScreen } from './notificacoes/CentralNotificacoesScreen';
-import { listarNotificacoesInternas, contarNaoLidas } from '../services/notificacoesInternasService';
+import { 
+  listarNotificacoesInternas, 
+  contarNaoLidas, 
+  emitirNotificacaoInterna 
+} from '../services/notificacoesInternasService';
+import { 
+  agendarMarcosBiometricosJejum, 
+  cancelarNotificacoesJejum,
+  agendarNotificacoesProcessoJejum,
+  cancelarNotificacoesProcessoJejum
+} from '../services/localNotificationService';
 import { BioimpedanciaScreen } from './bioimpedancia/BioimpedanciaScreen';
 import { JornadaScreen } from './jornada/JornadaScreen';
 import { PerfilScreen } from './perfil/PerfilScreen';
@@ -70,6 +84,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
   const [telaCentralNotificacoesAberta, setTelaCentralNotificacoesAberta] = useState<boolean>(false);
   const [totalNaoLidasInternas, setTotalNaoLidasInternas] = useState<number>(0);
   const [notificacoesPushAtivas, setNotificacoesPushAtivas] = useState<boolean>(false);
+
+  // Aba ativa no card de Dica do Dia / Biometria (permite abrir diretamente pelo clique na notificação)
+  const [abaCardDica, setAbaCardDica] = useState<'dica' | 'biometria'>('dica');
 
   // Detecta se este dispositivo possui push ativo e carrega contagem de notificações não lidas
   useEffect(() => {
@@ -228,6 +245,20 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
   const [telaRastreadorAguaAberta, setTelaRastreadorAguaAberta] = useState<boolean>(false);
   const [telaConfiguracoesJejumAberta, setTelaConfiguracoesJejumAberta] = useState<boolean>(false);
 
+  // Estados dos novos fluxos de retenção comportamental e proteção de hábito
+  const [modalSOSFomeAberto, setModalSOSFomeAberto] = useState<boolean>(false);
+  const [modalTravaEsquecimentoAberto, setModalTravaEsquecimentoAberto] = useState<boolean>(false);
+  const [modalResilienciaAberto, setModalResilienciaAberto] = useState<boolean>(false);
+
+  // Rastreia se o check-in corporal (peso ou bioimpedância) foi concluído hoje
+  const [pesoRegistradoHoje, setPesoRegistradoHoje] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const hoje = new Date().toISOString().slice(0, 10);
+      return localStorage.getItem('jejuar_peso_registrado_hoje') === hoje;
+    }
+    return false;
+  });
+
   // Modo de exibição do timer: 'decorrido' (progressivo) ou 'restante' (regressivo)
   const [modoTimer, setModoTimer] = useState<'decorrido' | 'restante'>('decorrido');
 
@@ -303,6 +334,22 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
         .catch((err) => console.warn('Aviso ao carregar histórico de água para conquistas:', err));
     }
   }, [usuario?.id, metaAgua]);
+
+  // Sincroniza grade nativa de notificações do processo de jejum no hardware do smartphone
+  useEffect(() => {
+    buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+      if (cfg && cfg.notificacoes) {
+        agendarNotificacoesProcessoJejum({
+          config: cfg.notificacoes,
+          horaInicioDiaria: cfg.horaInicioDiaria,
+          emJejum: jejumAtivo,
+          dataInicio: inicioTimestamp ? new Date(inicioTimestamp) : null,
+          metaHoras: planoAtivo.horasJejum,
+          nomePlano: planoAtivo.nome,
+        }).catch(() => {});
+      }
+    }).catch((err) => console.warn('Aviso ao sincronizar notificações do processo de jejum:', err));
+  }, [usuario?.id, jejumAtivo, inicioTimestamp, planoAtivo.horasJejum, planoAtivo.nome]);
 
   // Monitoramento ativo de lembrete de água em primeiro plano (com o aplicativo aberto)
   useEffect(() => {
@@ -527,6 +574,60 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
   };
 
+  // Avaliação e emissão de marcos biométricos em tempo real na Central de Notificações Internas
+  useEffect(() => {
+    if (!jejumAtivo || !inicioTimestamp || segundosJejum <= 0) return;
+
+    const horasDecorridas = segundosJejum / 3600;
+    const fatorPeso = (pesoAtual || 72.4) / 70;
+
+    // Marcos biológicos com estimativas metabólicas e oxidativas
+    const marcos = [
+      {
+        horas: 8,
+        titulo: '⚡ 8h de Jejum: Insulina no menor nível!',
+        mensagem: 'Seu fígado começou a liberar ácidos graxos estocados. Toque para ver sua estimativa de queima!',
+      },
+      {
+        horas: 12,
+        titulo: '🔥 12h de Jejum: Cetose Ativada!',
+        mensagem: `Cetonas alimentando seu cérebro! Estimativa de hoje: ~${Math.round(12 * 2.8 * fatorPeso)}g de gordura pura oxidada.`,
+      },
+      {
+        horas: 14,
+        titulo: '🔬 14h de Jejum: Queima Lipídica Profunda!',
+        mensagem: `Você atingiu 14h! Suas mitocôndrias ativaram a queima lipídica profunda. Estimativa de hoje: ~${Math.round(14 * 2.8 * fatorPeso)}g de gordura pura oxidada.`,
+      },
+      {
+        horas: planoAtivo.horasJejum,
+        titulo: `✨ Meta de ${planoAtivo.horasJejum}h Atingida! (${planoAtivo.nome})`,
+        mensagem: `Autofagia celular no pico máximo e ~${Math.round(planoAtivo.horasJejum * 3.2 * fatorPeso)}g de gordura oxidada. Parabéns!`,
+      },
+    ];
+
+    for (const marco of marcos) {
+      if (horasDecorridas >= marco.horas) {
+        const idNotif = `biometria_${inicioTimestamp.slice(0, 10)}_${marco.horas}h`;
+        emitirNotificacaoInterna(usuario?.id || '', {
+          id: idNotif,
+          titulo: marco.titulo,
+          mensagem: marco.mensagem,
+          categoria: 'conquista',
+          dataIso: new Date().toISOString(),
+          lida: false,
+          acaoLink: 'biometria',
+          acaoTexto: 'Ver Biometria',
+          remetente: 'Insight Biométrico',
+          icone: 'flame',
+        }).then(() => {
+          listarNotificacoesInternas(usuario?.id || '').then((lista) => {
+            setTotalNaoLidasInternas(contarNaoLidas(lista));
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+    }
+  }, [jejumAtivo, inicioTimestamp, Math.floor(segundosJejum / 3600), pesoAtual, planoAtivo.horasJejum, planoAtivo.nome, usuario?.id]);
+
   // Metas e cálculos de contagem regressiva, progresso e tempo extra (overtime) do Jejum
   const totalSegundosMeta = (planoAtivo.horasJejum || 16) * 3600;
   const metaAlcancada = jejumAtivo && segundosJejum >= totalSegundosMeta;
@@ -543,21 +644,23 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     ? Math.min(100, Math.max(0, (segundosJanela / totalSegundosJanela) * 100))
     : 0;
 
-  // Inicia um novo ciclo de jejum fechando a janela de alimentação
-  const iniciarNovoCicloJejum = () => {
-    const agoraIso = new Date().toISOString();
+  // Inicia um novo ciclo de jejum fechando a janela de alimentação (suporta início retroativo com 1 toque)
+  const iniciarNovoCicloJejum = (dataInicioRetroativa?: Date) => {
+    const dataRef = dataInicioRetroativa || new Date();
+    const dataIso = dataRef.toISOString();
     setEmJanelaAlimentacao(false);
     setInicioJanelaTimestamp(null);
     setSegundosJanela(0);
 
+    const decorrido = calcularSegundosDecorridos(dataIso);
     setJejumAtivo(true);
-    setSegundosJejum(1);
-    setInicioTimestamp(agoraIso);
+    setSegundosJejum(Math.max(1, decorrido));
+    setInicioTimestamp(dataIso);
 
     // Persiste instantaneamente no cache local do dispositivo
     if (typeof window !== 'undefined') {
       localStorage.setItem('jejuar_em_jejum', 'true');
-      localStorage.setItem('jejuar_inicio_jejum_timestamp', agoraIso);
+      localStorage.setItem('jejuar_inicio_jejum_timestamp', dataIso);
       localStorage.setItem('jejuar_em_janela_alimentacao', 'false');
       localStorage.removeItem('jejuar_inicio_janela_timestamp');
     }
@@ -566,7 +669,7 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     if (usuario?.id) {
       salvarEstadoJejumUsuarioFirestore(usuario.id, {
         emJejum: true,
-        inicioTimestamp: agoraIso,
+        inicioTimestamp: dataIso,
         emJanelaAlimentacao: false,
         inicioJanelaTimestamp: null,
         planoAtivoId: planoAtivo.id,
@@ -576,14 +679,35 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
       });
     }
 
+    // Agenda marcos biométricos e queima lipídica no hardware do smartphone via LocalNotifications
+    agendarMarcosBiometricosJejum(dataRef, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
+
+    // Agenda notificações do processo de jejum no hardware do celular
+    buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+      if (cfg && cfg.notificacoes) {
+        agendarNotificacoesProcessoJejum({
+          config: cfg.notificacoes,
+          horaInicioDiaria: cfg.horaInicioDiaria,
+          emJejum: true,
+          dataInicio: dataRef,
+          metaHoras: planoAtivo.horasJejum,
+          nomePlano: planoAtivo.nome,
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+
+    const horarioFormatado = dataRef.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
     setToastConfig({
       visivel: true,
-      titulo: '⏱️ Novo jejum iniciado!',
-      mensagem: `Protocolo ${planoAtivo.nome} (${planoAtivo.horasJejum}h) ativado. Bom jejum!`,
+      titulo: dataInicioRetroativa ? '⏱️ Jejum retroativo iniciado!' : '⏱️ Novo jejum iniciado!',
+      mensagem: dataInicioRetroativa
+        ? `Iniciado às ${horarioFormatado} (${planoAtivo.nome}). Benefícios celulares já ativos!`
+        : `Protocolo ${planoAtivo.nome} (${planoAtivo.horasJejum}h) ativado. Bom jejum!`,
     });
   };
 
-  // Alterna o estado do jejum: se meta alcançada abre o modal de celebração, senão confirma encerramento
+  // Alterna o estado do jejum: se meta alcançada e overtime alto, sugere a trava inteligente anti-esquecimento
   const handleAlternarJejum = () => {
     if (emJanelaAlimentacao) {
       iniciarNovoCicloJejum();
@@ -592,7 +716,12 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
 
     if (jejumAtivo) {
       if (metaAlcancada) {
-        setModalConcluirAberto(true);
+        // Se ultrapassou mais de 2h da meta, aciona a proteção contra esquecimento
+        if (segundosExtra > 7200) {
+          setModalTravaEsquecimentoAberto(true);
+        } else {
+          setModalConcluirAberto(true);
+        }
       } else {
         setModalEncerrarAberto(true);
       }
@@ -602,11 +731,18 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
   };
 
   // Confirmação para encerrar o jejum, registrar no histórico e abrir a janela de alimentação
-  const confirmarEncerramentoJejum = async () => {
+  const confirmarEncerramentoJejum = async (duracaoCustomizadaSegundos?: number) => {
     const agoraIso = new Date().toISOString();
-    const duracaoAtual = segundosJejum;
+    const duracaoAtual = typeof duracaoCustomizadaSegundos === 'number' ? duracaoCustomizadaSegundos : segundosJejum;
     const atingiuMeta = duracaoAtual >= (planoAtivo.horasJejum * 3600);
     const horasJanela = planoAtivo.horasAlimentacao || Math.max(1, 24 - planoAtivo.horasJejum);
+
+    // Se tiver duração customizada vinda da trava inteligente, calcula a data de fim exata da meta
+    let dataFimIso = agoraIso;
+    if (typeof duracaoCustomizadaSegundos === 'number' && inicioTimestamp) {
+      const inicioMs = new Date(inicioTimestamp).getTime();
+      dataFimIso = new Date(inicioMs + duracaoCustomizadaSegundos * 1000).toISOString();
+    }
 
     let novosDias = diasConsecutivos;
     let novoUltimoDia = ultimoDiaConcluido;
@@ -620,7 +756,7 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
             planoId: planoAtivo.id,
             nomePlano: planoAtivo.nome,
             inicio: inicioTimestamp || agoraIso,
-            fim: agoraIso,
+            fim: dataFimIso,
             duracaoSegundos: duracaoAtual,
             metaHoras: planoAtivo.horasJejum,
             metaAtingida: atingiuMeta,
@@ -652,6 +788,21 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     setDiasConsecutivos(novosDias);
     setUltimoDiaConcluido(novoUltimoDia);
     setModalEncerrarAberto(false);
+    setModalTravaEsquecimentoAberto(false);
+
+    // Cancela os alertas pendentes de marcos biométricos do ciclo que se encerrou
+    cancelarNotificacoesJejum().catch(() => {});
+
+    // Reagenda notificações do processo de jejum para a fase pré-início
+    buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+      if (cfg && cfg.notificacoes) {
+        agendarNotificacoesProcessoJejum({
+          config: cfg.notificacoes,
+          horaInicioDiaria: cfg.horaInicioDiaria,
+          emJejum: false,
+        }).catch(() => {});
+      }
+    }).catch(() => {});
 
     // Ativa a Janela de Alimentação
     setEmJanelaAlimentacao(true);
@@ -697,6 +848,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
         inicioTimestamp: novaDataIso,
       });
     }
+
+    // Reagenda marcos biométricos no hardware do dispositivo para o novo horário
+    agendarMarcosBiometricosJejum(novaData, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
 
     setToastConfig({
       visivel: true,
@@ -765,8 +919,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
   };
 
   // Incrementa água consumida com persistência imediata no Firestore
-  const adicionarAgua = () => {
-    const novoValor = Math.min(10000, aguaConsumida + 250);
+  const adicionarAgua = (mlPersonalizado: number = 250) => {
+    const incremento = typeof mlPersonalizado === 'number' && mlPersonalizado > 0 ? mlPersonalizado : 250;
+    const novoValor = Math.min(10000, aguaConsumida + incremento);
     setAguaConsumida(novoValor);
 
     const hojeStr = new Date().toISOString().slice(0, 10);
@@ -774,7 +929,7 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
 
     setToastConfig({
       visivel: true,
-      titulo: '💧 +250ml registrados!',
+      titulo: `💧 +${incremento}ml registrados!`,
       mensagem: `Você atingiu ${novoValor} ml de ${metaAgua} ml da sua meta diária.`
     });
   };
@@ -951,6 +1106,7 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
           notificacoesAtivas={notificacoesPushAtivas}
           totalNaoLidas={totalNaoLidasInternas}
           onAbrirAjustes={() => setTelaConfiguracoesJejumAberta(true)}
+          onAbrirResiliencia={() => setModalResilienciaAberto(true)}
         />
 
         {/* Conteúdo Principal da Aba Jejum */}
@@ -966,6 +1122,19 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
               isPulling={isPulling}
               isRefreshing={isRefreshing}
               isThresholdReached={isThresholdReached}
+            />
+
+            {/* Barra Compacta dos Anéis Metabólicos Triplos de Fechamento Diário */}
+            <AneisMetabolicosTriplos
+              horasJejum={jejumAtivo ? segundosJejum / 3600 : 0}
+              metaHorasJejum={planoAtivo.horasJejum || 16}
+              aguaConsumidaMl={aguaConsumida}
+              metaAguaMl={metaAgua}
+              pesoRegistradoHoje={pesoRegistradoHoje}
+              pesoAtualKg={pesoAtual}
+              onAdicionarAguaRapida={(ml) => adicionarAgua(ml)}
+              onAbrirRastreadorAgua={() => setTelaRastreadorAguaAberta(true)}
+              onAbrirDadosCorporais={() => setTelaDadosCorporaisAberta(true)}
             />
             
             {/* Card Principal de Cronometragem e Horários */}
@@ -987,6 +1156,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
               onAcaoPrincipal={handleAlternarJejum}
               onEditarHorarioInicio={() => setModalEditarHorarioAberto(true)}
               formatarTempo={formatarTempo}
+              onAbrirSOSFome={() => setModalSOSFomeAberto(true)}
+              onIniciarRetroativo={(dataRetro) => iniciarNovoCicloJejum(dataRetro)}
+              onAbrirTravaAntiEsquecimento={() => setModalTravaEsquecimentoAberto(true)}
             />
 
             {/* Régua Horizontal dos Estágios Metabólicos */}
@@ -1000,12 +1172,14 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
               }}
             />
 
-            {/* Dica do Dia Baseada no Progresso Metabólico Atual */}
+            {/* Dica do Dia Baseada no Progresso Metabólico Atual com Recompensa da Caça */}
             <CardDicaDoDia
               jejumAtivo={jejumAtivo}
               emJanelaAlimentacao={emJanelaAlimentacao}
               segundosJejum={segundosJejum}
               horasJejumMeta={planoAtivo.horasJejum || 16}
+              pesoAtual={pesoAtual}
+              abaSelecionada={abaCardDica}
             />
 
             {/* Grid 2x2 de Metas & Tarefas Diárias (Água, Peso, Calorias, Passos) */}
@@ -1127,6 +1301,37 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
         onContinuarJejuando={() => setModalConcluirAberto(false)}
       />
 
+      {/* Modal de Intervenção Comportamental: Modo SOS Fome (Dia 3) */}
+      <ModalSOSFome
+        aberto={modalSOSFomeAberto}
+        horasJejum={jejumAtivo ? segundosJejum / 3600 : 0}
+        aguaConsumidaMl={aguaConsumida}
+        onAdicionarAgua={(ml) => adicionarAgua(ml)}
+        onFechar={() => setModalSOSFomeAberto(false)}
+      />
+
+      {/* Modal de Trava Inteligente Anti-Esquecimento (Anti What-the-Hell Effect) */}
+      <ModalTravaAntiEsquecimento
+        aberto={modalTravaEsquecimentoAberto}
+        metaHoras={planoAtivo.horasJejum || 16}
+        segundosTotais={segundosJejum}
+        horarioMetaAtingida={horarios.terminoFormatado}
+        onConfirmarHorarioMeta={() => confirmarEncerramentoJejum((planoAtivo.horasJejum || 16) * 3600)}
+        onConfirmarTempoReal={() => confirmarEncerramentoJejum(segundosJejum)}
+        onAjustarManualmente={() => {
+          setModalTravaEsquecimentoAberto(false);
+          setModalEditarHorarioAberto(true);
+        }}
+        onFechar={() => setModalTravaEsquecimentoAberto(false)}
+      />
+
+      {/* Modal de Posicionamento de Resiliência (Top % de Consistência) */}
+      <ModalResilienciaConsistencia
+        aberto={modalResilienciaAberto}
+        diasConsecutivos={diasConsecutivos}
+        onFechar={() => setModalResilienciaAberto(false)}
+      />
+
       {/* Tela Cheia de Dados Corporais (Cobre integralmente o container) */}
       {telaDadosCorporaisAberta && (
         <DadosCorporaisScreen
@@ -1139,7 +1344,14 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
             }
           }}
           onVoltar={() => setTelaDadosCorporaisAberta(false)}
-          onAtualizarPeso={(novo) => setPesoAtual(novo)}
+          onAtualizarPeso={(novo) => {
+            setPesoAtual(novo);
+            setPesoRegistradoHoje(true);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('jejuar_peso_registrado_hoje', new Date().toISOString().slice(0, 10));
+              localStorage.setItem('jejuar_peso_atual', String(novo));
+            }
+          }}
         />
       )}
 
@@ -1198,6 +1410,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
               setAbaAtiva('plano');
             } else if (destino === 'jejum') {
               setAbaAtiva('jejum');
+            } else if (destino === 'biometria' || destino === 'jejum_biometria') {
+              setAbaAtiva('jejum');
+              setAbaCardDica('biometria');
             } else if (destino === 'bioimpedancia' || destino === 'exames') {
               setAbaAtiva('exames');
             }

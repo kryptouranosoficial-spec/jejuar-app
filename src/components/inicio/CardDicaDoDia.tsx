@@ -1,8 +1,8 @@
 /**
  * @file CardDicaDoDia.tsx
- * @description Componente dinâmico 'Dica do Dia' para a tela inicial do aplicativo Jejuar.
- * Exibe conteúdos curtos e acionáveis baseados no progresso metabólico em tempo real do usuário,
- * com orientações sobre o que consumir, sensações esperadas e botão para alternar entre dicas da mesma fase.
+ * @description Componente dinâmico de Dica do Dia e Recompensa da Caça (Biometria Revelada).
+ * Alterna suavemente entre o catálogo de orientações metabólicas práticas e o motor de
+ * cálculos biométricos revelados a cada marco (gramas de gordura oxidada, calorias lipídicas e autofagia).
  */
 
 import React, { useState, useMemo } from 'react';
@@ -15,8 +15,13 @@ import {
   Brain, 
   Apple, 
   Dna,
-  HeartPulse
+  HeartPulse,
+  Activity,
+  Zap,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
+import { vibrarClique, vibrarSucesso } from '../../utils/haptics';
 
 interface DicaMetabolica {
   id: string;
@@ -37,13 +42,30 @@ interface CardDicaDoDiaProps {
   segundosJejum: number;
   /** Meta de horas estipulada para o jejum */
   horasJejumMeta?: number;
+  /** Peso atual do usuário em kg para cálculos de lipólise */
+  pesoAtual?: number;
+  /** Permite forçar externamente a exibição da aba 'dica' ou 'biometria' (ex: ao clicar na notificação) */
+  abaSelecionada?: 'dica' | 'biometria';
 }
 
 export const CardDicaDoDia: React.FC<CardDicaDoDiaProps> = ({
   jejumAtivo,
   emJanelaAlimentacao,
   segundosJejum,
+  horasJejumMeta = 16,
+  pesoAtual = 72.4,
+  abaSelecionada,
 }) => {
+  // Aba ativa: 'dica' (orientação prática) ou 'biometria' (recompensa da caça com métricas reveladas)
+  const [abaAtiva, setAbaAtiva] = useState<'dica' | 'biometria'>(abaSelecionada || 'dica');
+
+  // Sincroniza se o componente pai solicitar a troca para 'biometria' ou 'dica'
+  React.useEffect(() => {
+    if (abaSelecionada) {
+      setAbaAtiva(abaSelecionada);
+    }
+  }, [abaSelecionada]);
+
   // Índice para alternar entre as dicas da mesma fase
   const [indiceDica, setIndiceDica] = useState<number>(0);
   const [animando, setAnimando] = useState<boolean>(false);
@@ -220,11 +242,58 @@ export const CardDicaDoDia: React.FC<CardDicaDoDiaProps> = ({
     ];
   }, [emJanelaAlimentacao, jejumAtivo, horasDecorridas]);
 
+  // Cálculos de Biometria Revelada (Recompensa da Caça baseada nas horas reais e peso do usuário)
+  const biometria = useMemo(() => {
+    const fatorPeso = (pesoAtual || 72.4) / 70;
+    
+    // Taxa de lipólise crescente conforme a insulina cai:
+    let taxaGorduraHora = 1.2;
+    if (horasDecorridas >= 16) taxaGorduraHora = 3.2;
+    else if (horasDecorridas >= 12) taxaGorduraHora = 2.8;
+    else if (horasDecorridas >= 8) taxaGorduraHora = 2.2;
+    else if (horasDecorridas >= 4) taxaGorduraHora = 1.6;
+
+    const gorduraGramas = Math.max(6, Math.round(horasDecorridas * taxaGorduraHora * fatorPeso));
+    const caloriasLipidicas = Math.round(gorduraGramas * 9);
+
+    // Marco atual desbloqueado
+    let marcoNome = 'Transição Metabólica';
+    let proximoMarcoTexto = 'Próximo marco às 4h (Insulina baixa)';
+    let porcentagemAteProximo = Math.min(100, Math.round((horasDecorridas / 4) * 100));
+
+    if (horasDecorridas >= 16) {
+      marcoNome = 'Autofagia e Renovação Mitocondrial';
+      proximoMarcoTexto = 'Nível Máximo de Limpeza Celular Ativo';
+      porcentagemAteProximo = 100;
+    } else if (horasDecorridas >= 12) {
+      marcoNome = 'Cetose e Queima Lipídica Profunda';
+      proximoMarcoTexto = `Faltam ${(16 - horasDecorridas).toFixed(1)}h para Autofagia Plena (16h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 12) / 4) * 100));
+    } else if (horasDecorridas >= 8) {
+      marcoNome = 'Lipólise Acelerada dos Adipócitos';
+      proximoMarcoTexto = `Faltam ${(12 - horasDecorridas).toFixed(1)}h para Cetose Plena (12h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 8) / 4) * 100));
+    } else if (horasDecorridas >= 4) {
+      marcoNome = 'Esvaziamento do Glicogênio Hepático';
+      proximoMarcoTexto = `Faltam ${(8 - horasDecorridas).toFixed(1)}h para Queima de Gordura (8h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 4) / 4) * 100));
+    }
+
+    return {
+      gorduraGramas,
+      caloriasLipidicas,
+      marcoNome,
+      proximoMarcoTexto,
+      porcentagemAteProximo,
+    };
+  }, [horasDecorridas, pesoAtual]);
+
   // Dica ativa com base no índice atual
   const dicaAtiva = catalogoDicasPorFase[indiceDica % catalogoDicasPorFase.length] || catalogoDicasPorFase[0];
 
   // Alterna suavemente para a próxima dica da mesma fase
   const handleProximaDica = () => {
+    vibrarClique();
     setAnimando(true);
     setTimeout(() => {
       setIndiceDica((prev) => (prev + 1) % catalogoDicasPorFase.length);
@@ -234,53 +303,160 @@ export const CardDicaDoDia: React.FC<CardDicaDoDiaProps> = ({
 
   return (
     <section 
-      className="bg-white rounded-2xl p-4 shadow-xs border border-amber-100/70 relative overflow-hidden select-none transition-all"
-      data-purpose="metabolic-tip-of-the-day"
+      className="bg-white rounded-3xl p-4 shadow-xs border border-amber-100/70 relative overflow-hidden select-none transition-all"
+      data-purpose="metabolic-tip-and-hunt-reward"
     >
-      {/* Detalhe estético sutil de fundo decorativo */}
+      {/* Detalhe estético de fundo decorativo */}
       <div 
         className="absolute -right-8 -bottom-8 w-28 h-28 rounded-full bg-amber-50/60 pointer-events-none blur-xl" 
         aria-hidden="true" 
       />
 
-      <div className="relative z-10 space-y-2.5">
-        {/* Topo do Card: Badge da Fase e Botão de Alternar Dica */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-[#FFF7E6] px-2.5 py-1 rounded-full border border-amber-200/50">
-            {dicaAtiva.icone}
-            <span className="truncate max-w-[210px]">{dicaAtiva.faseNome}</span>
+      <div className="relative z-10 space-y-3">
+        {/* Seletor Superior de Abas: Dica Metabólica vs Biometria Revelada */}
+        <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+          <div className="flex items-center gap-1.5 p-0.5 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                vibrarClique();
+                setAbaAtiva('dica');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[34px] flex items-center gap-1.5 cursor-pointer ${
+                abaAtiva === 'dica' 
+                  ? 'bg-white text-[#092244] shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Lightbulb className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>Dica do Dia</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                vibrarSucesso();
+                setAbaAtiva('biometria');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-h-[34px] flex items-center gap-1.5 cursor-pointer relative ${
+                abaAtiva === 'biometria' 
+                  ? 'bg-white text-emerald-700 shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Biometria</span>
+              {/* Ponto de novidade/recompensa */}
+              {jejumAtivo && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+              )}
+            </button>
           </div>
 
-          {/* Botão de Alternar Dica com touch target >= 44x44px */}
-          <button
-            type="button"
-            onClick={handleProximaDica}
-            title="Ver outra dica para esta fase"
-            aria-label="Ver outra dica para esta fase"
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/80 rounded-lg active:scale-90 transition-all cursor-pointer min-h-[36px]"
-          >
-            <RefreshCw className={`w-3 h-3 stroke-[2.5] ${animando ? 'animate-spin' : ''}`} />
-            <span>Outra dica</span>
-          </button>
+          {/* Botão de Alternar Dica (visível apenas na aba de dicas) */}
+          {abaAtiva === 'dica' && (
+            <button
+              type="button"
+              onClick={handleProximaDica}
+              title="Ver outra dica para esta fase"
+              aria-label="Ver outra dica para esta fase"
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg active:scale-90 transition-all cursor-pointer min-h-[34px]"
+            >
+              <RefreshCw className={`w-3 h-3 stroke-[2.5] ${animando ? 'animate-spin' : ''}`} />
+              <span>Outra dica</span>
+            </button>
+          )}
+
+          {/* Badge de Horário na aba de Biometria */}
+          {abaAtiva === 'biometria' && (
+            <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+              {jejumAtivo ? `${horasDecorridas.toFixed(1)}h decorridas` : 'Aguardando início'}
+            </span>
+          )}
         </div>
 
-        {/* Título e Conteúdo com animação de fade suave */}
-        <div className={`transition-opacity duration-150 ${animando ? 'opacity-0' : 'opacity-100'}`}>
-          <h3 className="text-[15px] font-black text-[#092244] leading-snug mb-1">
-            {dicaAtiva.titulo}
-          </h3>
-          <p className="text-[13px] text-gray-600 leading-relaxed font-normal">
-            {dicaAtiva.texto}
-          </p>
-        </div>
+        {/* MODO 1: DICA METABÓLICA CLÁSSICA (100% PRESERVADA) */}
+        {abaAtiva === 'dica' && (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-[#FFF7E6] px-2.5 py-1 rounded-full border border-amber-200/50 w-fit">
+              {dicaAtiva.icone}
+              <span className="truncate max-w-[240px]">{dicaAtiva.faseNome}</span>
+            </div>
 
-        {/* Rodapé: Dica Prática em Destaque */}
-        <div className="pt-1 border-t border-amber-100/50 flex items-center gap-1.5 text-xs text-amber-900/90 font-medium">
-          <Lightbulb className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
-          <span className="text-[11.5px] font-semibold leading-tight">
-            <strong>Dica prática:</strong> {dicaAtiva.dicaPratica}
-          </span>
-        </div>
+            <div className={`transition-opacity duration-150 ${animando ? 'opacity-0' : 'opacity-100'}`}>
+              <h3 className="text-[15px] font-black text-[#092244] leading-snug mb-1">
+                {dicaAtiva.titulo}
+              </h3>
+              <p className="text-[13px] text-gray-600 leading-relaxed font-normal">
+                {dicaAtiva.texto}
+              </p>
+            </div>
+
+            <div className="pt-1 border-t border-amber-100/50 flex items-center gap-1.5 text-xs text-amber-900/90 font-medium">
+              <Lightbulb className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+              <span className="text-[11.5px] font-semibold leading-tight">
+                <strong>Dica prática:</strong> {dicaAtiva.dicaPratica}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* MODO 2: RECOMPENSA DA CAÇA (BIOMETRIA REVELADA COM CÁLCULOS DO CORPO) */}
+        {abaAtiva === 'biometria' && (
+          <div className="space-y-3 animate-in fade-in duration-200">
+            {/* Título do Marco Desbloqueado */}
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-500" />
+                Descoberta Celular Desbloqueada
+              </span>
+              <h3 className="text-sm font-black text-[#092244] leading-tight mt-0.5">
+                {biometria.marcoNome}
+              </h3>
+            </div>
+
+            {/* Grid com Estimativas Biométricas em Tempo Real */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Card 1: Gordura Pura Oxidada */}
+              <div className="bg-gradient-to-br from-emerald-50/80 to-teal-50/60 border border-emerald-100 rounded-2xl p-2.5 text-left">
+                <div className="flex items-center gap-1 text-emerald-700 text-[10px] font-black uppercase tracking-wider mb-0.5">
+                  <Flame className="w-3 h-3 fill-emerald-500" />
+                  <span>Gordura Oxidada</span>
+                </div>
+                <span className="text-lg font-black text-[#092244] block leading-tight">
+                  ~{biometria.gorduraGramas}g
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-700 leading-tight block">
+                  Lipídios viscerais puros
+                </span>
+              </div>
+
+              {/* Card 2: Energia Adiposa Consumida */}
+              <div className="bg-gradient-to-br from-amber-50/80 to-orange-50/60 border border-amber-100 rounded-2xl p-2.5 text-left">
+                <div className="flex items-center gap-1 text-amber-700 text-[10px] font-black uppercase tracking-wider mb-0.5">
+                  <Zap className="w-3 h-3 fill-amber-500" />
+                  <span>Energia da Reserva</span>
+                </div>
+                <span className="text-lg font-black text-[#092244] block leading-tight">
+                  ~{biometria.caloriasLipidicas} kcal
+                </span>
+                <span className="text-[10px] font-semibold text-amber-700 leading-tight block">
+                  Extraídas do estoque
+                </span>
+              </div>
+            </div>
+
+            {/* Próximo Desbloqueio (Incerteza Preditiva) */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <span className="font-bold text-slate-500">
+                {biometria.proximoMarcoTexto}
+              </span>
+              <span className="font-extrabold text-emerald-700">
+                {biometria.porcentagemAteProximo}%
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
