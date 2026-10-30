@@ -22,17 +22,18 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: 3. Configurar Java JDK 17 (Exigido pelo Android SDK moderno)
+      - name: 3. Configurar Java JDK 21 (Compatível com Gradle 8.14+ e Android SDK moderno)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: 4. Instalar dependências do projeto
-        run: npm ci || npm install
+        run: npm install --legacy-peer-deps
 
       - name: 5. Compilar o aplicativo Web (Vite)
         run: npm run build
+
 
       - name: 6. Sincronizar arquivos compilados com o Android (Capacitor)
         run: npx cap sync android
