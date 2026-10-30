@@ -339,68 +339,71 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
       {/* Conteúdo com Cartões Agrupados */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
-        {/* PAINEL DE STATUS EM TEMPO REAL — TRANSPARÊNCIA TOTAL */}
-        <div className={`p-4 rounded-2xl border transition-all shadow-xs flex flex-col gap-3 ${
-          prontoParaProximoAlerta
-            ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900 ring-1 ring-emerald-500/20'
-            : permissaoDenied
-              ? 'bg-rose-50 border-rose-200 text-rose-900 ring-1 ring-rose-500/20'
-              : 'bg-amber-50 border-amber-200 text-amber-900'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${
-                prontoParaProximoAlerta
-                  ? 'bg-emerald-500 ring-4 ring-emerald-200'
-                  : permissaoDenied
-                    ? 'bg-rose-500 ring-4 ring-rose-200'
-                    : 'bg-amber-500 ring-4 ring-amber-200'
-              }`} />
-              <span className="text-xs font-black uppercase tracking-wider">
-                {prontoParaProximoAlerta
-                  ? 'Alertas 100% Prontos para os Próximos Horários'
-                  : permissaoDenied
-                    ? 'Notificações Bloqueadas no Google Chrome'
-                    : 'Ativação de Alertas Pendente'}
+        {/* PAINEL DE STATUS WEB — Exibido apenas no navegador/PWA (ocultado no aplicativo nativo APK) */}
+        {!ehAmbienteNativo() && (
+          <div className={`p-4 rounded-2xl border transition-all shadow-xs flex flex-col gap-3 ${
+            prontoParaProximoAlerta
+              ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900 ring-1 ring-emerald-500/20'
+              : permissaoDenied
+                ? 'bg-rose-50 border-rose-200 text-rose-900 ring-1 ring-rose-500/20'
+                : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${
+                  prontoParaProximoAlerta
+                    ? 'bg-emerald-500 ring-4 ring-emerald-200'
+                    : permissaoDenied
+                      ? 'bg-rose-500 ring-4 ring-rose-200'
+                      : 'bg-amber-500 ring-4 ring-amber-200'
+                }`} />
+                <span className="text-xs font-black uppercase tracking-wider">
+                  {prontoParaProximoAlerta
+                    ? 'Alertas 100% Prontos para os Próximos Horários'
+                    : permissaoDenied
+                      ? 'Notificações Bloqueadas no Google Chrome'
+                      : 'Ativação de Alertas Pendente'}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90 border border-slate-200/80 text-slate-700 font-mono">
+                {String(statusPermissaoNativa).toUpperCase()}
               </span>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90 border border-slate-200/80 text-slate-700 font-mono">
-              {String(statusPermissaoNativa).toUpperCase()}
-            </span>
-          </div>
 
-          <div className="text-xs space-y-1.5 leading-relaxed font-medium">
-            {prontoParaProximoAlerta ? (
-              <div className="flex flex-col gap-1">
-                <p className="font-bold text-emerald-800 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  Seu aparelho está autorizado e conectado com o servidor na nuvem!
-                </p>
-                <p className="text-[11px] text-emerald-700">
-                  Os lembretes de hidratação e jejum chegarão pontualmente na sua tela de bloqueio com o aplicativo fechado.
-                </p>
-              </div>
-            ) : permissaoDenied ? (
-              <div className="flex flex-col gap-2">
-                <p className="font-bold text-rose-800 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  O Google Chrome do seu celular bloqueou as permissões deste site.
-                </p>
-                <div className="p-3 rounded-xl bg-white/95 border border-rose-200 text-[11px] text-rose-900 space-y-1">
-                  <p className="font-bold text-rose-800">Como liberar no Chrome em 2 passos rápidos:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-700">
-                    <li>Toque no ícone de <strong>Cadeado 🔒 ou Ajustes</strong> ao lado do endereço na barra do navegador.</li>
-                    <li>Acesse <strong>Permissões</strong> e altere Notificações para <strong>Permitir</strong>.</li>
-                  </ol>
+            <div className="text-xs space-y-1.5 leading-relaxed font-medium">
+              {prontoParaProximoAlerta ? (
+                <div className="flex flex-col gap-1">
+                  <p className="font-bold text-emerald-800 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    Seu aparelho está autorizado e conectado com o servidor na nuvem!
+                  </p>
+                  <p className="text-[11px] text-emerald-700">
+                    Os lembretes de hidratação e jejum chegarão pontualmente na sua tela de bloqueio com o aplicativo fechado.
+                  </p>
                 </div>
-              </div>
-            ) : (
-              <p className="text-amber-800">
-                Toque no botão de testar abaixo para conceder a permissão nativa de notificações ao seu navegador.
-              </p>
-            )}
+              ) : permissaoDenied ? (
+                <div className="flex flex-col gap-2">
+                  <p className="font-bold text-rose-800 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    O Google Chrome do seu celular bloqueou as permissões deste site.
+                  </p>
+                  <div className="p-3 rounded-xl bg-white/95 border border-rose-200 text-[11px] text-rose-900 space-y-1">
+                    <p className="font-bold text-rose-800">Como liberar no Chrome em 2 passos rápidos:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                      <li>Toque no ícone de <strong>Cadeado 🔒 ou Ajustes</strong> ao lado do endereço na barra do navegador.</li>
+                      <li>Acesse <strong>Permissões</strong> e altere Notificações para <strong>Permitir</strong>.</li>
+                    </ol>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-amber-800">
+                  Toque no botão de testar abaixo para conceder a permissão nativa de notificações ao seu navegador.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-xs divide-y divide-slate-100 overflow-hidden">
           
@@ -513,158 +516,161 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
           </button>
         </div>
 
-        {/* Grupo 4: PAINEL DE DIAGNÓSTICO & HISTÓRICO DE DISPAROS */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden transition-all">
-          
-          {/* Cabeçalho do Card Expansível */}
-          <button
-            type="button"
-            onClick={() => setPainelDiagnosticoAberto(!painelDiagnosticoAberto)}
-            className="w-full flex items-center justify-between p-4 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors cursor-pointer min-h-[64px]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                <Activity className="w-5 h-5 stroke-[2.2]" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[15px] font-bold text-[#092244]">
-                  Diagnóstico e Histórico de Alertas
-                </span>
-                <span className="text-xs text-slate-400">
-                  {painelDiagnosticoAberto ? 'Toque para recolher o painel de auditoria' : 'Acompanhe as respostas e o status do servidor FCM'}
-                </span>
-              </div>
-            </div>
-            <div className="p-2 text-slate-400 hover:text-slate-600">
-              {painelDiagnosticoAberto ? (
-                <ChevronUp className="w-5 h-5 stroke-[2.2]" />
-              ) : (
-                <ChevronDown className="w-5 h-5 stroke-[2.2]" />
-              )}
-            </div>
-          </button>
-
-          {/* Conteúdo Expandido do Diagnóstico */}
-          {painelDiagnosticoAberto && (
-            <div className="px-4 pb-4 pt-2 border-t border-slate-100 space-y-4">
-              
-              {/* Badges do Sistema e Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <Smartphone className="w-4 h-4 text-slate-500 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Aparelho Ativo</span>
-                    <span className="text-xs font-bold text-[#092244]">
-                      {totalDispositivosAtivos === null 
-                        ? 'Verificando...' 
-                        : totalDispositivosAtivos > 0 
-                          ? `${totalDispositivosAtivos} dispositivo registrado` 
-                          : 'Nenhum ativo'}
-                    </span>
-                  </div>
+        {/* Grupo 4: PAINEL DE DIAGNÓSTICO & HISTÓRICO DE DISPAROS — Exibido apenas no ambiente Web/PWA */}
+        {!ehAmbienteNativo() && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden transition-all">
+            
+            {/* Cabeçalho do Card Expansível */}
+            <button
+              type="button"
+              onClick={() => setPainelDiagnosticoAberto(!painelDiagnosticoAberto)}
+              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors cursor-pointer min-h-[64px]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Activity className="w-5 h-5 stroke-[2.2]" />
                 </div>
-
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <Clock className="w-4 h-4 text-slate-500 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Fuso Horário</span>
-                    <span className="text-xs font-bold text-[#092244] truncate">
-                      {fusoNavegador}
-                    </span>
-                  </div>
+                <div className="flex flex-col">
+                  <span className="text-[15px] font-bold text-[#092244]">
+                    Diagnóstico e Histórico de Alertas
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {painelDiagnosticoAberto ? 'Toque para recolher o painel de auditoria' : 'Acompanhe as respostas e o status do servidor FCM'}
+                  </span>
                 </div>
               </div>
-
-              {/* Ações Rápidas de Diagnóstico */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={carregarDiagnostico}
-                  disabled={carregandoHistorico}
-                  className="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all text-xs font-bold text-[#092244] min-h-[44px] cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-4 h-4 ${carregandoHistorico ? 'animate-spin' : ''}`} />
-                  Atualizar Histórico
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLimparInativos}
-                  disabled={limpandoInativos}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 active:scale-95 transition-all text-xs font-bold min-h-[44px] cursor-pointer disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {limpandoInativos ? 'Limpando...' : 'Limpar Inativos'}
-                </button>
-              </div>
-
-              {mensagemAvisoLimpeza && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  {mensagemAvisoLimpeza}
-                </div>
-              )}
-
-              {/* Lista do Histórico de Registros de Disparos */}
-              <div className="space-y-2 pt-1">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                  Últimos Disparos do Servidor
-                </span>
-
-                {carregandoHistorico && historicoLogs.length === 0 ? (
-                  <div className="flex items-center justify-center py-6 text-slate-400 text-xs gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                    Carregando histórico do Firestore...
-                  </div>
-                ) : historicoLogs.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                    Nenhum disparo registrado ainda neste dispositivo. Clique no botão &quot;Testar&quot; acima para registrar o primeiro evento.
-                  </div>
+              <div className="p-2 text-slate-400 hover:text-slate-600">
+                {painelDiagnosticoAberto ? (
+                  <ChevronUp className="w-5 h-5 stroke-[2.2]" />
                 ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {historicoLogs.map((item) => {
-                      const isSucesso = item.status === 'sucesso';
-                      return (
-                        <div
-                          key={item.id}
-                          className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1 text-xs"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 font-bold">
-                              {isSucesso ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              ) : (
-                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                              )}
-                              <span className={isSucesso ? 'text-emerald-700 uppercase tracking-wide' : 'text-rose-600 uppercase tracking-wide'}>
-                                {item.tipo || 'alerta'}
-                              </span>
-                              {item.fcmStatus && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-mono">
-                                  FCM: {item.fcmStatus}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              {item.dataHoraFormatada || 'Horário recente'}
-                            </span>
-                          </div>
-                          <p className="text-slate-600 font-normal leading-relaxed">
-                            {item.detalhe}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ChevronDown className="w-5 h-5 stroke-[2.2]" />
                 )}
               </div>
+            </button>
 
-            </div>
-          )}
+            {/* Conteúdo Expandido do Diagnóstico */}
+            {painelDiagnosticoAberto && (
+              <div className="px-4 pb-4 pt-2 border-t border-slate-100 space-y-4">
+                
+                {/* Badges do Sistema e Status */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <Smartphone className="w-4 h-4 text-slate-500 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Aparelho Ativo</span>
+                      <span className="text-xs font-bold text-[#092244]">
+                        {totalDispositivosAtivos === null 
+                          ? 'Verificando...' 
+                          : totalDispositivosAtivos > 0 
+                            ? `${totalDispositivosAtivos} dispositivo registrado` 
+                            : 'Nenhum ativo'}
+                      </span>
+                    </div>
+                  </div>
 
-        </div>
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Fuso Horário</span>
+                      <span className="text-xs font-bold text-[#092244] truncate">
+                        {fusoNavegador}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ações Rápidas de Diagnóstico */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={carregarDiagnostico}
+                    disabled={carregandoHistorico}
+                    className="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all text-xs font-bold text-[#092244] min-h-[44px] cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${carregandoHistorico ? 'animate-spin' : ''}`} />
+                    Atualizar Histórico
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleLimparInativos}
+                    disabled={limpandoInativos}
+                    className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 active:scale-95 transition-all text-xs font-bold min-h-[44px] cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {limpandoInativos ? 'Limpando...' : 'Limpar Inativos'}
+                  </button>
+                </div>
+
+                {mensagemAvisoLimpeza && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    {mensagemAvisoLimpeza}
+                  </div>
+                )}
+
+                {/* Lista do Histórico de Registros de Disparos */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                    Últimos Disparos do Servidor
+                  </span>
+
+                  {carregandoHistorico && historicoLogs.length === 0 ? (
+                    <div className="flex items-center justify-center py-6 text-slate-400 text-xs gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                      Carregando histórico do Firestore...
+                    </div>
+                  ) : historicoLogs.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                      Nenhum disparo registrado ainda neste dispositivo. Clique no botão &quot;Testar&quot; acima para registrar o primeiro evento.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {historicoLogs.map((item) => {
+                        const isSucesso = item.status === 'sucesso';
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1 text-xs"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 font-bold">
+                                {isSucesso ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                ) : (
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                )}
+                                <span className={isSucesso ? 'text-emerald-700 uppercase tracking-wide' : 'text-rose-600 uppercase tracking-wide'}>
+                                  {item.tipo || 'alerta'}
+                                </span>
+                                {item.fcmStatus && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-mono">
+                                    FCM: {item.fcmStatus}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {item.dataHoraFormatada || 'Horário recente'}
+                              </span>
+                            </div>
+                            <p className="text-slate-600 font-normal leading-relaxed">
+                              {item.detalhe}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+          </div>
+        )}
 
       </main>
     </div>
   );
 };
+
