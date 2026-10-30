@@ -287,3 +287,48 @@ export async function cancelarNotificacoesJejum(): Promise<void> {
     console.warn('[Capacitor LocalNotifications] Erro ao cancelar jejum:', err);
   }
 }
+
+/**
+ * Dispara uma notificação nativa de teste com som e vibração após 2 segundos.
+ * Permite comprovar imediatamente que o hardware do Android está respondendo aos alarmes.
+ */
+export async function dispararTesteNotificacaoNativa(): Promise<{ sucesso: boolean; mensagem: string }> {
+  if (!ehAmbienteNativo()) {
+    return { sucesso: false, mensagem: 'Ambiente web: utilizando envio via servidor.' };
+  }
+
+  try {
+    await inicializarCanaisNativos();
+    const temPermissao = await solicitarPermissaoNativa();
+    if (!temPermissao) {
+      return { sucesso: false, mensagem: 'Permissão de notificação negada no Android.' };
+    }
+
+    const daquiADoisSegundos = new Date(Date.now() + 2000);
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: 9999,
+          title: '💧 Teste Nativo: Jejuar',
+          body: 'Perfeito! As notificações nativas no seu celular estão 100% ativas e pontuais.',
+          channelId: CANAL_AGUA_ID,
+          smallIcon: 'ic_stat_icon_config_sample',
+          schedule: {
+            at: daquiADoisSegundos,
+            allowWhileIdle: true
+          },
+          extra: {
+            tipo: 'teste_nativo'
+          }
+        }
+      ]
+    });
+
+    return { sucesso: true, mensagem: 'Notificação nativa agendada! Chegará em 2 segundos na tela.' };
+  } catch (err: any) {
+    console.error('[Capacitor LocalNotifications] Erro no teste nativo:', err);
+    return { sucesso: false, mensagem: err?.message || 'Falha ao agendar teste nativo.' };
+  }
+}
+

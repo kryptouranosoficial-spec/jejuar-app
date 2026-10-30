@@ -36,7 +36,12 @@ import {
   testarEnvioPushServidor,
   sincronizarAssinaturaSilenciosa
 } from '../../services/pushNotificationService';
-import { agendarGradeNativaAgua } from '../../services/localNotificationService';
+import { 
+  agendarGradeNativaAgua, 
+  ehAmbienteNativo, 
+  dispararTesteNotificacaoNativa 
+} from '../../services/localNotificationService';
+
 
 
 interface NotificacoesScreenProps {
@@ -190,15 +195,29 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
   };
 
   const handleTestarNotificacao = async () => {
-    if (!usuarioId || testandoPush) return;
+    if (testandoPush) return;
     setTestandoPush(true);
     setStatusTeste('ocioso');
 
     try {
-      // 1. Garante que o aparelho está assinado e ativo com Google FCM e no Firestore
-      await solicitarPermissaoEAssinarPush(usuarioId);
+      // 1. Se estiver rodando dentro do aplicativo nativo (.apk), testa o hardware diretamente
+      if (ehAmbienteNativo()) {
+        const resultadoNativo = await dispararTesteNotificacaoNativa();
+        if (resultadoNativo.sucesso) {
+          setStatusTeste('sucesso');
+        } else {
+          setStatusTeste('erro');
+        }
+        return;
+      }
 
-      // 2. Dispara o envio real através do servidor via Web Push
+      // 2. Se estiver na Web / PWA, utiliza a rota de teste do servidor
+      if (!usuarioId) {
+        setStatusTeste('erro');
+        return;
+      }
+
+      await solicitarPermissaoEAssinarPush(usuarioId);
       const res = await testarEnvioPushServidor(usuarioId);
       if (res.sucesso) {
         setStatusTeste('sucesso');
@@ -206,15 +225,46 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
         setStatusTeste('erro');
       }
     } catch (e: any) {
-      console.error('Erro no teste de push:', e);
+      console.error('Erro no teste de notificação:', e);
       setStatusTeste('erro');
     } finally {
       setTestandoPush(false);
-      // Recarrega o diagnóstico imediatamente após o teste
       carregarDiagnostico();
       setTimeout(() => setStatusTeste('ocioso'), 7000);
     }
   };
+
+
+  // Estado reativo em tempo real do status de permissão no navegador/Chrome
+
+  const [statusPermissaoNativa, setStatusPermissaoNativa] = useState<NotificationPermission | 'nao_suportado'>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'nao_suportado';
+  });
+
+  // Atualiza dinamicamente a permissão quando a janela ganha foco ou muda de visibilidade
+  useEffect(() => {
+    const atualizarStatus = () => {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        setStatusPermissaoNativa(Notification.permission);
+      }
+    };
+
+    window.addEventListener('focus', atualizarStatus);
+    document.addEventListener('visibilitychange', atualizarStatus);
+
+    return () => {
+      window.removeEventListener('focus', atualizarStatus);
+      document.removeEventListener('visibilitychange', atualizarStatus);
+    };
+  }, []);
+
+  const permissaoGranted = statusPermissaoNativa === 'granted';
+  const permissaoDenied = statusPermissaoNativa === 'denied';
+  const temDispositivoAtivo = (totalDispositivosAtivos ?? 0) > 0;
+  const prontoParaProximoAlerta = permissaoGranted && temDispositivoAtivo;
+
+  // Detecta o fuso horário atual configurado no navegador
+  const fusoNavegador = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'America/Sao_Paulo';
 
   if (subtela === 'jejum') {
     return (
@@ -257,7 +307,6 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
     );
   }
 
-
   if (subtela === 'peso') {
     return (
       <NotificacaoPesoScreen
@@ -268,35 +317,6 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
     );
   }
 
-  // Estado reativo em tempo real do status de permissão no navegador/Chrome
-  const [statusPermissaoNativa, setStatusPermissaoNativa] = useState<NotificationPermission | 'nao_suportado'>(() => {
-    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'nao_suportado';
-  });
-
-  // Atualiza dinamicamente a permissão quando a janela ganha foco ou muda de visibilidade
-  useEffect(() => {
-    const atualizarStatus = () => {
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        setStatusPermissaoNativa(Notification.permission);
-      }
-    };
-
-    window.addEventListener('focus', atualizarStatus);
-    document.addEventListener('visibilitychange', atualizarStatus);
-
-    return () => {
-      window.removeEventListener('focus', atualizarStatus);
-      document.removeEventListener('visibilitychange', atualizarStatus);
-    };
-  }, []);
-
-  const permissaoGranted = statusPermissaoNativa === 'granted';
-  const permissaoDenied = statusPermissaoNativa === 'denied';
-  const temDispositivoAtivo = (totalDispositivosAtivos ?? 0) > 0;
-  const prontoParaProximoAlerta = permissaoGranted && temDispositivoAtivo;
-
-  // Detecta o fuso horário atual configurado no navegador
-  const fusoNavegador = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'America/Sao_Paulo';
 
   return (
     <div className="w-full h-full flex flex-col bg-[#F5F9FC] select-none transition-colors">
