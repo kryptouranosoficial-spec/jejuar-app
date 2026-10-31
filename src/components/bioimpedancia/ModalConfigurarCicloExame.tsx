@@ -16,10 +16,9 @@ interface ModalConfigurarCicloExameProps {
 }
 
 const OPCOES_FREQUENCIA = [
-  { dias: 30, rotulo: '30 dias', descricao: 'Recomendado para fases de queima ativa e adaptação' },
-  { dias: 45, rotulo: '45 dias', descricao: 'Ritmo equilibrado para acompanhar recomposição corporal' },
-  { dias: 60, rotulo: '60 dias', descricao: 'Ideal para manutenção e consolidação de hábitos' },
-  { dias: 90, rotulo: '90 dias', descricao: 'Trimestral, excelente para checagens periódicas' },
+  { dias: 7, rotulo: '7 dias (1 semana)', descricao: 'Acompanhamento semanal intensivo após a última medição' },
+  { dias: 15, rotulo: '15 dias (Quinzenal)', descricao: 'Equilíbrio ideal para acompanhar perda de gordura e massa magra' },
+  { dias: 30, rotulo: '30 dias (Mensal)', descricao: 'Ciclo mensal completo de recomposição corporal' },
 ];
 
 export const ModalConfigurarCicloExame: React.FC<ModalConfigurarCicloExameProps> = ({
@@ -28,7 +27,7 @@ export const ModalConfigurarCicloExame: React.FC<ModalConfigurarCicloExameProps>
   onSalvar,
   onFechar,
 }) => {
-  const [frequencia, setFrequencia] = useState<number>(configAtual.frequenciaDias || 30);
+  const [frequencia, setFrequencia] = useState<number>(configAtual.frequenciaDias || 15);
   const [lembretes, setLembretes] = useState<boolean>(configAtual.lembretesAtivos ?? true);
   const [salvando, setSalvando] = useState<boolean>(false);
 

@@ -42,6 +42,7 @@ import {
   classificarExameBioimpedancia,
   calcularFaixaPesoIdeal
 } from '../../utils/bioimpedanciaUtils';
+import { agendarNotificacoesBioimpedancia } from '../../services/localNotificationService';
 import { GraficoEvolucaoBioimpedancia } from './GraficoEvolucaoBioimpedancia';
 import { SimuladorPreditivoBioimpedancia } from './SimuladorPreditivoBioimpedancia';
 import { CardExameItem } from './CardExameItem';
@@ -64,10 +65,12 @@ export const BioimpedanciaScreen: React.FC<BioimpedanciaScreenProps> = ({
   const [carregando, setCarregando] = useState<boolean>(true);
   const [termoBusca, setTermoBusca] = useState<string>('');
 
-  // Configuração de ciclo de reteste (ex: a cada 30 dias)
+  // Configuração de ciclo de reteste (ex: a cada 7, 15 ou 30 dias)
   const [configCiclo, setConfigCiclo] = useState<ConfiguracaoRetesteBioimpedancia>({
-    frequenciaDias: 30,
+    frequenciaDias: 15,
     lembretesAtivos: true,
+    horaLembrete: '08:00',
+    somLembrete: 'Padrão',
   });
 
   // Modais
@@ -96,6 +99,16 @@ export const BioimpedanciaScreen: React.FC<BioimpedanciaScreenProps> = ({
       ]);
       setExames(listaExames);
       setConfigCiclo(config);
+
+      // Agenda ou cancela o alarme nativo de bioimpedância com base na existência de registro
+      const ordenados = [...listaExames].sort((a, b) => (b.dataExame > a.dataExame ? 1 : -1));
+      const maisRecente = ordenados[0] || null;
+      agendarNotificacoesBioimpedancia({
+        ativo: config.lembretesAtivos ?? true,
+        hora: config.horaLembrete || '08:00',
+        intervaloDias: config.frequenciaDias || 15,
+        dataUltimoExame: maisRecente?.dataExame || null,
+      }).catch(() => {});
     } catch (err) {
       console.warn('Aviso ao carregar bioimpedâncias:', err);
     } finally {
@@ -184,8 +197,19 @@ export const BioimpedanciaScreen: React.FC<BioimpedanciaScreenProps> = ({
    * Salva alteração de periodicidade do reteste.
    */
   const handleSalvarConfigCiclo = async (novaConfig: ConfiguracaoRetesteBioimpedancia) => {
-    setConfigCiclo(novaConfig);
-    await salvarConfiguracaoReteste(usuarioId, novaConfig);
+    const configCompleta: ConfiguracaoRetesteBioimpedancia = {
+      ...configCiclo,
+      ...novaConfig,
+    };
+    setConfigCiclo(configCompleta);
+    await salvarConfiguracaoReteste(usuarioId, configCompleta);
+
+    agendarNotificacoesBioimpedancia({
+      ativo: configCompleta.lembretesAtivos ?? true,
+      hora: configCompleta.horaLembrete || '08:00',
+      intervaloDias: configCompleta.frequenciaDias || 15,
+      dataUltimoExame: ultimoExame?.dataExame || null,
+    }).catch(() => {});
   };
 
   return (

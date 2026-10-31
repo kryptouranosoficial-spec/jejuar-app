@@ -13,6 +13,7 @@ import {
   buscarConfiguracoesLembretePesoFirestore,
   type ConfiguracoesLembretePeso 
 } from '../services/firebase';
+import { agendarNotificacoesPeso } from '../services/localNotificationService';
 import { ModalDefinirHoraLembrete } from './configuracoes/ModalDefinirHoraLembrete';
 import { ModalEscolherDiasLembrete, DIAS_DA_SEMANA } from './configuracoes/ModalEscolherDiasLembrete';
 import { ModalEscolherSomLembrete } from './configuracoes/ModalEscolherSomLembrete';
@@ -78,6 +79,12 @@ export const ConfiguracoesPesoScreen: React.FC<ConfiguracoesPesoScreenProps> = (
             if (dados.hora) setHoraLembrete(dados.hora);
             if (dados.dias && dados.dias.length > 0) setDiasLembrete(dados.dias);
             if (dados.som) setSomLembrete(dados.som);
+
+            agendarNotificacoesPeso({
+              ativo: dados.ativo,
+              hora: dados.hora || '08:00',
+              dias: dados.dias && dados.dias.length > 0 ? dados.dias : DIAS_DA_SEMANA,
+            }).catch(() => {});
           }
         })
         .catch((err) => {
@@ -99,13 +106,24 @@ export const ConfiguracoesPesoScreen: React.FC<ConfiguracoesPesoScreenProps> = (
     if (atualizacao.dias) setDiasLembrete(novosDias);
     if (atualizacao.som) setSomLembrete(novoSom);
 
-    // Salva em localStorage
+    // Salva em localStorage e limpa trava de disparo caso horário/dia mude
     try {
       localStorage.setItem('jejuar_lembrete_peso_ativo', String(novoAtivo));
       localStorage.setItem('jejuar_lembrete_peso_hora', novaHora);
       localStorage.setItem('jejuar_lembrete_peso_dias', JSON.stringify(novosDias));
       localStorage.setItem('jejuar_lembrete_peso_som', novoSom);
+      if (atualizacao.hora || atualizacao.dias || atualizacao.ativo) {
+        const hojeStr = new Date().toISOString().slice(0, 10);
+        localStorage.removeItem(`jejuar_alerta_peso_emitido_${hojeStr}`);
+      }
     } catch {}
+
+    // Agenda alarmes nativos no Android/iOS via Capacitor
+    agendarNotificacoesPeso({
+      ativo: novoAtivo,
+      hora: novaHora,
+      dias: novosDias,
+    }).catch(() => {});
 
     // Salva no Firestore
     if (usuario?.id) {

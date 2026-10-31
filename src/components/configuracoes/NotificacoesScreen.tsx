@@ -27,6 +27,7 @@ import type { ConfiguracoesNotificacoes, ConfiguracaoMonitorAgua } from '../../t
 import { NotificacaoJejumScreen } from './NotificacaoJejumScreen';
 import { ConfiguracaoMonitorAguaScreen } from '../agua/ConfiguracaoMonitorAguaScreen';
 import { NotificacaoPesoScreen } from './NotificacaoPesoScreen';
+import { NotificacaoBioimpedanciaScreen } from './NotificacaoBioimpedanciaScreen';
 import { 
   buscarConfiguracaoAguaFirestore, 
   salvarConfiguracaoAguaFirestore 
@@ -57,7 +58,7 @@ interface NotificacoesScreenProps {
   onVoltar: () => void;
 }
 
-type SubtelaNotificacao = 'menu' | 'jejum' | 'agua' | 'peso';
+type SubtelaNotificacao = 'menu' | 'jejum' | 'agua' | 'peso' | 'bioimpedancia';
 
 interface ItemHistoricoDisparo {
   id: string;
@@ -317,6 +318,17 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
     );
   }
 
+  if (subtela === 'bioimpedancia') {
+    return (
+      <NotificacaoBioimpedanciaScreen
+        usuarioId={usuarioId}
+        notificacoes={notificacoes}
+        onAtualizarNotificacoes={onAtualizarNotificacoes}
+        onVoltar={() => setSubtela('menu')}
+      />
+    );
+  }
+
 
   return (
     <div className="w-full h-full flex flex-col bg-[#F5F9FC] select-none transition-colors">
@@ -436,6 +448,17 @@ export const NotificacoesScreen: React.FC<NotificacoesScreenProps> = ({
           >
             <span className="text-[15px] font-semibold text-[#092244]">
               Peso
+            </span>
+            <ChevronRight className="w-5 h-5 text-slate-400" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSubtela('bioimpedancia')}
+            className="w-full flex items-center justify-between p-4 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors cursor-pointer min-h-[52px]"
+          >
+            <span className="text-[15px] font-semibold text-[#092244]">
+              Bioimpedância
             </span>
             <ChevronRight className="w-5 h-5 text-slate-400" />
           </button>

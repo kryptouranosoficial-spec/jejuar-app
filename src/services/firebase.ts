@@ -40,6 +40,7 @@ import type {
   ProtocoloJejumData,
   ConfiguracoesJejum
 } from "../types";
+import { notificarAtualizacaoGamificacao } from "../utils/perfilUtils";
 
 // Suprime avisos de reconexão de canais do Firestore em redes móveis/proxies
 setLogLevel('error');
@@ -471,6 +472,23 @@ export async function registrarHistoricoJejumFirestore(
     try {
       localStorage.setItem('jejuar_dias_consecutivos', String(novosDias));
       localStorage.setItem('jejuar_ultimo_dia', hojeStr);
+      const maiorAntigo = Number(localStorage.getItem('jejuar_maior_streak') || '0');
+      if (novosDias > maiorAntigo) {
+        localStorage.setItem('jejuar_maior_streak', String(novosDias));
+      }
+      if (opcoesJanela?.abrirJanelaAlimentacao) {
+        localStorage.setItem('jejuar_explorou_janela', 'true');
+      }
+
+      // Adiciona imediatamente a sessão concluída ao cache local para atualização instantânea das conquistas e XP
+      const cacheSessoesRaw = localStorage.getItem('jejuar_historico_jejuns_cache');
+      const listaAtual = cacheSessoesRaw ? JSON.parse(cacheSessoesRaw) : [];
+      const novaSessaoCache: SessaoJejum = {
+        ...sessao,
+        id: sessao.id || `jejum_${Date.now()}`,
+      };
+      const novaLista = [novaSessaoCache, ...(Array.isArray(listaAtual) ? listaAtual : [])];
+      localStorage.setItem('jejuar_historico_jejuns_cache', JSON.stringify(novaLista));
     } catch {
       // Ignora restrições locais silenciosamente
     }
@@ -516,11 +534,89 @@ export async function registrarHistoricoJejumFirestore(
     }
   }
 
+  notificarAtualizacaoGamificacao();
+
   return {
     novosDiasConsecutivos: novosDias,
     ultimoDiaAtualizado: hojeStr,
     inicioJanelaIso,
   };
+}
+
+/**
+ * Salva ou edita manualmente uma sessão de jejum na subcoleção 'usuarios/{usuarioId}/historico_jejuns'.
+ * Utilizado pela subtela EditarJejunsScreen para manter o histórico do Firestore 100% sincronizado.
+ * @param usuarioId ID do usuário autenticado.
+ * @param sessao Objeto completo da sessão de jejum a ser criada ou atualizada.
+ */
+export async function salvarSessaoJejumManualFirestore(
+  usuarioId: string,
+  sessao: SessaoJejum
+): Promise<string> {
+  if (!usuarioId) return sessao.id || `jejum_${Date.now()}`;
+
+  try {
+    const historicoRef = collection(db, "usuarios", usuarioId, "historico_jejuns");
+    if (sessao.id && !sessao.id.startsWith("jejum_")) {
+      const docRef = doc(db, "usuarios", usuarioId, "historico_jejuns", sessao.id);
+      await setDoc(
+        docRef,
+        {
+          planoId: sessao.planoId,
+          nomePlano: sessao.nomePlano,
+          inicio: sessao.inicio,
+          fim: sessao.fim,
+          duracaoSegundos: sessao.duracaoSegundos,
+          metaHoras: sessao.metaHoras,
+          metaAtingida: sessao.metaAtingida,
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      notificarAtualizacaoGamificacao();
+      return sessao.id;
+    } else {
+      const docRef = await addDoc(historicoRef, {
+        planoId: sessao.planoId,
+        nomePlano: sessao.nomePlano,
+        inicio: sessao.inicio,
+        fim: sessao.fim,
+        duracaoSegundos: sessao.duracaoSegundos,
+        metaHoras: sessao.metaHoras,
+        metaAtingida: sessao.metaAtingida,
+        criadoEm: serverTimestamp(),
+      });
+      notificarAtualizacaoGamificacao();
+      return docRef.id;
+    }
+  } catch (error) {
+    console.warn("[Firebase] Aviso ao salvar sessão manual de jejum no Firestore:", error);
+    notificarAtualizacaoGamificacao();
+    return sessao.id || `jejum_${Date.now()}`;
+  }
+}
+
+/**
+ * Remove uma sessão de jejum da subcoleção 'usuarios/{usuarioId}/historico_jejuns' no Firestore.
+ * @param usuarioId ID do usuário autenticado.
+ * @param sessaoId ID do documento da sessão de jejum a ser excluída.
+ */
+export async function excluirSessaoJejumFirestore(
+  usuarioId: string,
+  sessaoId: string
+): Promise<void> {
+  if (!usuarioId || !sessaoId) {
+    notificarAtualizacaoGamificacao();
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "usuarios", usuarioId, "historico_jejuns", sessaoId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.warn("[Firebase] Aviso ao excluir sessão de jejum no Firestore:", error);
+  }
+  notificarAtualizacaoGamificacao();
 }
 
 /** Interface de um registro individual de pesagem */
@@ -544,8 +640,17 @@ export async function registrarPesagemHistoricoFirestore(
   peso: number,
   fotoUrl?: string
 ): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      const qtdAtual = Number(localStorage.getItem('jejuar_total_pesagens_registradas') || '0');
+      localStorage.setItem('jejuar_total_pesagens_registradas', String(qtdAtual + 1));
+      localStorage.setItem('jejuar_peso_atual', String(peso));
+      localStorage.setItem('jejuar_peso_registrado_hoje', new Date().toISOString().slice(0, 10));
+    } catch {}
+  }
+
   if (!usuarioId) {
-    console.warn("[Firebase] usuarioId não fornecido ao registrar pesagem.");
+    notificarAtualizacaoGamificacao();
     return;
   }
 
@@ -568,7 +673,9 @@ export async function registrarPesagemHistoricoFirestore(
       "informacoesBasicas.atualizadoEm": serverTimestamp(),
       atualizadoEm: serverTimestamp()
     });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
+    notificarAtualizacaoGamificacao();
     console.error("[Firebase] Erro ao registrar pesagem no Firestore:", error);
     throw error;
   }
@@ -583,7 +690,10 @@ export async function atualizarPesoInicialFirestore(
   usuarioId: string,
   pesoInicial: number
 ): Promise<void> {
-  if (!usuarioId) return;
+  if (!usuarioId) {
+    notificarAtualizacaoGamificacao();
+    return;
+  }
 
   try {
     const usuarioRef = doc(db, "usuarios", usuarioId);
@@ -592,7 +702,9 @@ export async function atualizarPesoInicialFirestore(
       "informacoesBasicas.atualizadoEm": serverTimestamp(),
       atualizadoEm: serverTimestamp()
     });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
+    notificarAtualizacaoGamificacao();
     console.error("[Firebase] Erro ao atualizar peso inicial no Firestore:", error);
     throw error;
   }
@@ -607,7 +719,10 @@ export async function atualizarMetaPesoFirestore(
   usuarioId: string,
   pesoDesejado: number
 ): Promise<void> {
-  if (!usuarioId) return;
+  if (!usuarioId) {
+    notificarAtualizacaoGamificacao();
+    return;
+  }
 
   try {
     const usuarioRef = doc(db, "usuarios", usuarioId);
@@ -616,7 +731,9 @@ export async function atualizarMetaPesoFirestore(
       "informacoesBasicas.atualizadoEm": serverTimestamp(),
       atualizadoEm: serverTimestamp()
     });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
+    notificarAtualizacaoGamificacao();
     console.error("[Firebase] Erro ao atualizar meta de peso no Firestore:", error);
     throw error;
   }
@@ -675,17 +792,57 @@ export async function salvarConfiguracoesLembretePesoFirestore(
   usuarioId: string,
   config: ConfiguracoesLembretePeso
 ): Promise<void> {
+  const diasTexto =
+    Array.isArray(config.dias) && config.dias.length === 7
+      ? 'Todos os dias'
+      : Array.isArray(config.dias) && config.dias.length > 0
+      ? config.dias.join(', ')
+      : 'Todos os dias';
+
+  // Sincroniza cache local de ambos os módulos (ConfiguracoesPesoScreen e NotificacaoPesoScreen)
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('jejuar_lembrete_peso_ativo', String(config.ativo));
+      localStorage.setItem('jejuar_lembrete_peso_hora', config.hora);
+      localStorage.setItem('jejuar_lembrete_peso_dias', JSON.stringify(config.dias));
+      localStorage.setItem('jejuar_lembrete_peso_som', config.som);
+
+      const salvoJejum = localStorage.getItem('jejuar_config_jejum');
+      const objJejum = salvoJejum ? JSON.parse(salvoJejum) : { ...CONFIGURACAO_JEJUM_PADRAO };
+      if (!objJejum.notificacoes) objJejum.notificacoes = { ...CONFIGURACAO_JEJUM_PADRAO.notificacoes };
+      objJejum.notificacoes.pesoLembreteAtivo = config.ativo;
+      objJejum.notificacoes.pesoHora = config.hora;
+      objJejum.notificacoes.pesoDias = diasTexto;
+      objJejum.notificacoes.pesoSom = config.som;
+      localStorage.setItem('jejuar_config_jejum', JSON.stringify(objJejum));
+    } catch {
+      // Ignora restrições locais
+    }
+  }
+
   if (!usuarioId) return;
 
   try {
     const usuarioRef = doc(db, "usuarios", usuarioId);
-    await updateDoc(usuarioRef, {
-      configuracoesPeso: {
-        ...config,
+    await setDoc(
+      usuarioRef,
+      {
+        configuracoesPeso: {
+          ...config,
+          atualizadoEm: serverTimestamp()
+        },
+        configuracoesJejum: {
+          notificacoes: {
+            pesoLembreteAtivo: config.ativo,
+            pesoHora: config.hora,
+            pesoDias: diasTexto,
+            pesoSom: config.som
+          }
+        },
         atualizadoEm: serverTimestamp()
       },
-      atualizadoEm: serverTimestamp()
-    });
+      { merge: true }
+    );
   } catch (error) {
     console.error("[Firebase] Erro ao salvar configurações de lembrete de peso:", error);
     throw error;
@@ -706,7 +863,25 @@ export async function buscarConfiguracoesLembretePesoFirestore(
     const snap = await getDoc(usuarioRef);
     if (!snap.exists()) return null;
     const data = snap.data();
-    return data.configuracoesPeso || null;
+    if (data.configuracoesPeso) {
+      return data.configuracoesPeso;
+    }
+    if (data.configuracoesJejum?.notificacoes) {
+      const n = data.configuracoesJejum.notificacoes;
+      const diasStr = String(n.pesoDias || 'Todos os dias');
+      const todosDias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      const diasArr =
+        diasStr === 'Todos os dias'
+          ? todosDias
+          : diasStr.split(',').map((s: string) => s.trim()).filter(Boolean);
+      return {
+        ativo: n.pesoLembreteAtivo ?? true,
+        hora: n.pesoHora || '08:00',
+        dias: diasArr.length > 0 ? diasArr : todosDias,
+        som: n.pesoSom || 'Padrão'
+      };
+    }
+    return null;
   } catch (error) {
     console.warn("[Firebase] Aviso ao carregar configurações de peso:", error);
     return null;
@@ -746,7 +921,18 @@ export async function salvarMedidaCorporalFirestore(
   parte: string,
   valorCm: number
 ): Promise<void> {
-  if (!usuarioId) return;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('jejuar_medida_registrada_manual', 'true');
+      const qtdAtual = Number(localStorage.getItem('jejuar_total_medidas_registradas') || '0');
+      localStorage.setItem('jejuar_total_medidas_registradas', String(qtdAtual + 1));
+    } catch {}
+  }
+
+  if (!usuarioId) {
+    notificarAtualizacaoGamificacao();
+    return;
+  }
 
   try {
     const usuarioRef = doc(db, "usuarios", usuarioId);
@@ -772,7 +958,9 @@ export async function salvarMedidaCorporalFirestore(
       dataIso: new Date().toISOString(),
       criadoEm: serverTimestamp()
     });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
+    notificarAtualizacaoGamificacao();
     console.error(`[Firebase] Erro ao salvar medida corporal (${parte}):`, error);
     throw new Error("Não conseguimos salvar suas medidas. Verifique sua conexão e tente novamente.");
   }
@@ -884,6 +1072,8 @@ export async function salvarConsumoAguaFirestore(
     }
   }
 
+  notificarAtualizacaoGamificacao();
+
   if (!usuarioId) return;
 
   try {
@@ -909,6 +1099,7 @@ export async function salvarConsumoAguaFirestore(
       },
       atualizadoEm: serverTimestamp()
     }, { merge: true });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
     console.warn("[Firebase] Aviso ao salvar consumo de água no Firestore:", error);
   }
@@ -984,6 +1175,99 @@ export async function buscarHistoricoAguaFirestore(
 }
 
 /**
+ * Busca TODO o histórico de ingestão de água do usuário sem limite de 7 dias,
+ * unificando os documentos da subcoleção 'historico_agua' do Firestore com todas as chaves
+ * 'jejuar_agua_YYYY-MM-DD' presentes no LocalStorage.
+ * Também atualiza o cache consolidado 'jejuar_total_agua_consumida_ml' para leitura instantânea.
+ *
+ * @param usuarioId ID do usuário autenticado
+ * @param metaPadrao Meta padrão em ml caso o registro não especifique
+ */
+export async function buscarTodoHistoricoAguaFirestore(
+  usuarioId?: string,
+  metaPadrao: number = 2500
+): Promise<RegistroConsumoAgua[]> {
+  const mapaUnificado: Record<string, RegistroConsumoAgua> = {};
+
+  // 1. Lê todas as chaves locais do tipo 'jejuar_agua_YYYY-MM-DD' no navegador
+  if (typeof window !== 'undefined') {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const chave = localStorage.key(i);
+        if (chave && /^jejuar_agua_\d{4}-\d{2}-\d{2}$/.test(chave)) {
+          const dataStr = chave.replace('jejuar_agua_', '');
+          const valorMl = Number(localStorage.getItem(chave) || '0');
+          if (!isNaN(valorMl) && valorMl > 0) {
+            mapaUnificado[dataStr] = {
+              id: `agua_${dataStr}`,
+              dataStr,
+              consumidoMl: valorMl,
+              metaMl: metaPadrao,
+              unidade: 'ml',
+            };
+          }
+        }
+      }
+    } catch {
+      // Ignora restrições de leitura do localStorage
+    }
+  }
+
+  // 2. Consulta todos os registros persistidos na subcoleção 'historico_agua' no Firestore
+  if (usuarioId) {
+    try {
+      const historicoRef = collection(db, "usuarios", usuarioId, "historico_agua");
+      const q = query(historicoRef, orderBy("dataStr", "desc"), limit(1000));
+      const snapshot = await getDocs(q);
+
+      const hojeStr = new Date().toISOString().slice(0, 10);
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const dStr = data.dataStr || docSnap.id;
+        const consumidoRemoto = Number(data.consumidoMl || 0);
+        const consumidoLocal = mapaUnificado[dStr]?.consumidoMl || 0;
+
+        // Para o dia de hoje preserva o maior valor entre cache imediato e banco; para dias passados usa o banco
+        const consumidoFinal = dStr === hojeStr ? Math.max(consumidoRemoto, consumidoLocal) : consumidoRemoto;
+
+        if (consumidoFinal > 0) {
+          mapaUnificado[dStr] = {
+            id: docSnap.id,
+            dataStr: dStr,
+            consumidoMl: consumidoFinal,
+            metaMl: Number(data.metaMl || metaPadrao),
+            unidade: data.unidade || 'ml',
+            atualizadoEm: data.atualizadoEm,
+          };
+        } else if (mapaUnificado[dStr] && dStr !== hojeStr) {
+          // Se foi zerado/excluído no banco em dia anterior, remove do mapa consolidado
+          delete mapaUnificado[dStr];
+        }
+      });
+    } catch (error) {
+      console.warn("[Firebase] Aviso ao buscar todo o histórico de água no Firestore:", error);
+    }
+  }
+
+  const listaConsolidada = Object.values(mapaUnificado).sort((a, b) =>
+    b.dataStr.localeCompare(a.dataStr)
+  );
+
+  // 3. Atualiza a soma total real em ml no cache local para zero-latency no Perfil
+  if (typeof window !== 'undefined') {
+    try {
+      const somaTotalMl = listaConsolidada.reduce((acc, item) => acc + (item.consumidoMl || 0), 0);
+      localStorage.setItem('jejuar_total_agua_consumida_ml', String(somaTotalMl));
+    } catch {
+      // Ignora erro local
+    }
+  }
+
+  return listaConsolidada;
+}
+
+/**
  * Salva as configurações de monitoramento de água (lembretes, horários, meta e unidade) no Firestore.
  * 
  * @param usuarioId ID do usuário autenticado
@@ -1035,7 +1319,9 @@ export async function salvarConfiguracaoAguaFirestore(
       },
       atualizadoEm: serverTimestamp()
     }, { merge: true });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
+    notificarAtualizacaoGamificacao();
     console.error("[Firebase] Erro ao salvar configurações do monitor de água:", error);
     throw new Error("Não conseguimos salvar as configurações de água. Verifique sua conexão e tente novamente.");
   }
@@ -1106,6 +1392,10 @@ export const CONFIGURACAO_JEJUM_PADRAO: ConfiguracoesJejum = {
     pesoHora: "08:00",
     pesoDias: "Todos os dias",
     pesoSom: "Padrão",
+    bioimpedanciaLembreteAtivo: true,
+    bioimpedanciaHora: "08:00",
+    bioimpedanciaIntervaloDias: 15,
+    bioimpedanciaSom: "Padrão",
     naoPerturbeAtivo: false,
     naoPerturbeHoraInicio: "23:00",
     naoPerturbeHoraFim: "07:00",
@@ -1122,9 +1412,38 @@ export async function salvarConfiguracoesJejumFirestore(
   usuarioId: string,
   config: ConfiguracoesJejum
 ): Promise<void> {
+  const todosDias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  const pesoDiasStr = config.notificacoes?.pesoDias || 'Todos os dias';
+  const diasArray =
+    pesoDiasStr === 'Todos os dias'
+      ? todosDias
+      : pesoDiasStr.split(',').map((d) => d.trim()).filter(Boolean);
+
+  const bioAtivo = config.notificacoes?.bioimpedanciaLembreteAtivo ?? true;
+  const bioHora = config.notificacoes?.bioimpedanciaHora || '08:00';
+  const bioIntervalo = Number(config.notificacoes?.bioimpedanciaIntervaloDias) || 15;
+  const bioSom = config.notificacoes?.bioimpedanciaSom || 'Padrão';
+
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem('jejuar_config_jejum', JSON.stringify(config));
+      if (config.notificacoes) {
+        localStorage.setItem('jejuar_lembrete_peso_ativo', String(config.notificacoes.pesoLembreteAtivo ?? true));
+        localStorage.setItem('jejuar_lembrete_peso_hora', config.notificacoes.pesoHora || '08:00');
+        localStorage.setItem('jejuar_lembrete_peso_dias', JSON.stringify(diasArray));
+        localStorage.setItem('jejuar_lembrete_peso_som', config.notificacoes.pesoSom || 'Padrão');
+
+        // Sincroniza cache local de bioimpedância
+        localStorage.setItem(
+          `jejuar_bio_config_${usuarioId || 'padrao'}`,
+          JSON.stringify({
+            frequenciaDias: bioIntervalo,
+            lembretesAtivos: bioAtivo,
+            horaLembrete: bioHora,
+            somLembrete: bioSom,
+          })
+        );
+      }
     } catch {
       // Ignora restrições locais
     }
@@ -1139,6 +1458,23 @@ export async function salvarConfiguracoesJejumFirestore(
         ...config,
         atualizadoEm: serverTimestamp()
       },
+      configuracoesPeso: {
+        ativo: config.notificacoes?.pesoLembreteAtivo ?? true,
+        hora: config.notificacoes?.pesoHora || '08:00',
+        dias: diasArray,
+        som: config.notificacoes?.pesoSom || 'Padrão',
+        atualizadoEm: serverTimestamp()
+      },
+      atualizadoEm: serverTimestamp()
+    }, { merge: true });
+
+    // Sincroniza também na subcoleção configuracoes/bioimpedancia para paridade com BioimpedanciaScreen e servidor
+    const configBioRef = doc(db, "usuarios", usuarioId, "configuracoes", "bioimpedancia");
+    await setDoc(configBioRef, {
+      frequenciaDias: bioIntervalo,
+      lembretesAtivos: bioAtivo,
+      horaLembrete: bioHora,
+      somLembrete: bioSom,
       atualizadoEm: serverTimestamp()
     }, { merge: true });
   } catch (error) {

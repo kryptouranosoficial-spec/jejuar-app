@@ -13,54 +13,126 @@
 
 import type { ConquistaUsuario, RegistroConsumoAgua } from '../types';
 
+/**
+ * Parâmetros completos para avaliação em tempo real de todas as conquistas do aplicativo.
+ */
 export interface ParametrosCalculoConquistas {
+  /** Dias consecutivos de sequência (streak atual ou máximo atingido) */
   diasConsecutivos?: number;
+  /** Consumo de água registrado no dia de hoje (em ml) */
   aguaConsumidaHoje?: number;
+  /** Meta diária de água configurada para hoje (em ml) */
   metaAguaHoje?: number;
+  /** Histórico consolidado de registros diários de água */
   historicoAgua7Dias?: RegistroConsumoAgua[];
+  /** Quantidade real de sessões de jejum concluídas no histórico */
   totalJejunsConcluidos?: number;
+  /** Peso atual aferido pelo usuário (em kg) */
   pesoAtualKg?: number;
+  /** Peso inicial de partida do usuário (em kg) */
   pesoInicialKg?: number;
+  /** Meta de peso desejado pelo usuário (em kg) */
   pesoDesejadoKg?: number;
+  /** Quantidade de registros de pesagem realizados na balança */
+  pesagensRegistradasCount?: number;
+  /** Quantidade de medidas corporais registradas (cintura, quadril, peito, braço, coxa) */
   medidasRegistradasCount?: number;
+  /** Quantidade de exames de bioimpedância cadastrados */
   examesBioimpedanciaCount?: number;
+  /** Indica se houve redução no percentual de gordura corporal entre exames de bioimpedância */
   gorduraCorporalReduzida?: boolean;
+  /** Indica se o usuário preencheu os dados pessoais/corporais completos no perfil */
   perfilCompleto?: boolean;
+  /** Indica se o usuário possui foto ou avatar configurado */
   temFotoOuAvatar?: boolean;
+  /** Indica se o usuário já configurou sua meta de água ou realizou registros hídricos */
+  configurouAguaOuBateuMeta?: boolean;
+  /** Indica se o usuário já abriu/explorou a janela de alimentação pós-jejum */
+  explorouJanelaAlimentacao?: boolean;
+  /** Indica se o usuário ativou lembretes inteligentes ou widgets de acompanhamento */
+  ativouLembretesOuWidgets?: boolean;
+  /** Indica se os dados estão sincronizados na nuvem ou se exportou backup LGPD */
+  sincronizouNuvemOuBackup?: boolean;
+  /** Indica se o usuário já compartilhou pelo menos uma conquista com amigos */
+  compartilhouConquista?: boolean;
 }
 
 /**
- * Calcula a lista de medalhas e conquistas organizadas por Missões.
+ * Calcula a lista completa de medalhas e conquistas organizadas por Missões,
+ * refletindo fielmente cada ação realizada pelo usuário no aplicativo.
  */
 export function calcularConquistasUsuario({
-  diasConsecutivos = 1,
+  diasConsecutivos = 0,
   aguaConsumidaHoje = 0,
-  metaAguaHoje = 2000,
+  metaAguaHoje = 2500,
   historicoAgua7Dias = [],
   totalJejunsConcluidos = 0,
   pesoAtualKg,
   pesoInicialKg,
   pesoDesejadoKg,
+  pesagensRegistradasCount = 0,
   medidasRegistradasCount = 0,
   examesBioimpedanciaCount = 0,
   gorduraCorporalReduzida = false,
-  perfilCompleto = true,
-  temFotoOuAvatar = true,
+  perfilCompleto = false,
+  configurouAguaOuBateuMeta = false,
+  explorouJanelaAlimentacao = false,
+  ativouLembretesOuWidgets = false,
+  sincronizouNuvemOuBackup = false,
+  compartilhouConquista = false,
 }: ParametrosCalculoConquistas): ConquistaUsuario[] {
-  // Total real de jejuns contabilizados (máximo entre sessoes e streak)
-  const countJejuns = Math.max(totalJejunsConcluidos, diasConsecutivos, 1);
+  // 1. Total real de jejuns concluídos (não força 1 se o usuário ainda não concluiu nenhum jejum)
+  const streakEfetivo = totalJejunsConcluidos > 0 ? Math.max(diasConsecutivos, 1) : (diasConsecutivos > 1 ? diasConsecutivos : 0);
+  const countJejuns = Math.max(0, totalJejunsConcluidos, diasConsecutivos > 1 ? diasConsecutivos : 0);
 
-  // Histórico de água batida
-  const diasMetaAguaBatida = historicoAgua7Dias.filter(
-    (item) => item.consumidoMl >= (item.metaMl || metaAguaHoje)
-  ).length + (aguaConsumidaHoje >= metaAguaHoje && metaAguaHoje > 0 ? 1 : 0);
+  // 2. Histórico de água batida (unificado por data YYYY-MM-DD para nunca duplicar o dia de hoje)
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const mapaDiasAgua = new Map<string, { consumidoMl: number; metaMl: number }>();
 
-  // Cálculo de perda de peso em kg
+  historicoAgua7Dias.forEach((item) => {
+    if (!item || !item.dataStr) return;
+    const atual = mapaDiasAgua.get(item.dataStr);
+    const consumido = Math.max(atual?.consumidoMl || 0, Number(item.consumidoMl) || 0);
+    const meta = Number(item.metaMl) || metaAguaHoje || 2500;
+    mapaDiasAgua.set(item.dataStr, { consumidoMl: consumido, metaMl: meta });
+  });
+
+  // Garante que o consumo em tempo real de hoje esteja refletido sem somar duas vezes
+  if (aguaConsumidaHoje > 0) {
+    const registroHoje = mapaDiasAgua.get(hojeStr);
+    mapaDiasAgua.set(hojeStr, {
+      consumidoMl: Math.max(registroHoje?.consumidoMl || 0, aguaConsumidaHoje),
+      metaMl: registroHoje?.metaMl || metaAguaHoje || 2500,
+    });
+  }
+
+  let diasMetaAguaBatida = 0;
+  mapaDiasAgua.forEach((info) => {
+    if (info.metaMl > 0 && info.consumidoMl >= info.metaMl) {
+      diasMetaAguaBatida += 1;
+    }
+  });
+
+  // 3. Cálculo de perda de peso em kg e verificação de primeiro registro de peso
+  const temPesoRegistrado = pesagensRegistradasCount > 0 || Boolean(
+    pesoInicialKg && pesoAtualKg && Math.abs(pesoInicialKg - pesoAtualKg) >= 0.1
+  );
+
   const pesoPerdidoKg = (pesoInicialKg && pesoAtualKg && pesoInicialKg > pesoAtualKg)
-    ? (pesoInicialKg - pesoAtualKg)
+    ? Number((pesoInicialKg - pesoAtualKg).toFixed(1))
     : 0;
 
-  const metaPesoAtingida = (pesoAtualKg && pesoDesejadoKg) ? (pesoAtualKg <= pesoDesejadoKg) : false;
+  const metaPesoAtingida = Boolean(
+    pesoAtualKg &&
+    pesoDesejadoKg &&
+    pesoInicialKg &&
+    pesoAtualKg <= pesoDesejadoKg &&
+    (pesagensRegistradasCount > 0 || pesoAtualKg < pesoInicialKg)
+  );
+
+  // 4. Flags dinâmicas do bloco Aventureiro
+  const mestreAguaDesbloqueado = configurouAguaOuBateuMeta || diasMetaAguaBatida >= 1 || aguaConsumidaHoje > 0;
+  const chefDesbloqueado = explorouJanelaAlimentacao || countJejuns >= 1;
 
   const listaConquistas: ConquistaUsuario[] = [
     // ==========================================
@@ -258,15 +330,15 @@ export function calcularConquistasUsuario({
       descricao: 'Mantenha uma sequência ininterrupta de 7 dias seguidos.',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 7,
-      progressoAtual: Math.min(7, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 7,
+      progressoAtual: Math.min(7, streakEfetivo),
       progressoTotal: 7,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
       rotuloBadge: '7',
       estiloBadge: 'hexagonal',
       corTema: 'dourado',
-      dataDesbloqueio: diasConsecutivos >= 7 ? 'Conquistada' : undefined,
+      dataDesbloqueio: streakEfetivo >= 7 ? 'Conquistada' : undefined,
     },
     {
       id: 'combo-14',
@@ -274,8 +346,8 @@ export function calcularConquistasUsuario({
       descricao: '2 semanas inteiras de disciplina sem quebrar a sequência.',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 14,
-      progressoAtual: Math.min(14, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 14,
+      progressoAtual: Math.min(14, streakEfetivo),
       progressoTotal: 14,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
@@ -289,8 +361,8 @@ export function calcularConquistasUsuario({
       descricao: 'Praticamente um mês inteiro (28 dias) sem interrupções!',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 28,
-      progressoAtual: Math.min(28, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 28,
+      progressoAtual: Math.min(28, streakEfetivo),
       progressoTotal: 28,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
@@ -304,8 +376,8 @@ export function calcularConquistasUsuario({
       descricao: '50 dias seguidos de dedicação total ao seu corpo.',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 50,
-      progressoAtual: Math.min(50, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 50,
+      progressoAtual: Math.min(50, streakEfetivo),
       progressoTotal: 50,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
@@ -319,8 +391,8 @@ export function calcularConquistasUsuario({
       descricao: '100 dias ininterruptos! Um hábito para a vida toda.',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 100,
-      progressoAtual: Math.min(100, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 100,
+      progressoAtual: Math.min(100, streakEfetivo),
       progressoTotal: 100,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
@@ -334,8 +406,8 @@ export function calcularConquistasUsuario({
       descricao: '200 dias de foco implacável. Nível mestre!',
       categoria: 'streak',
       blocoNome: 'Guerreiro Perseverante',
-      desbloqueada: diasConsecutivos >= 200,
-      progressoAtual: Math.min(200, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 200,
+      progressoAtual: Math.min(200, streakEfetivo),
       progressoTotal: 200,
       unidadeProgresso: 'dias',
       iconeNome: 'fogo',
@@ -444,11 +516,11 @@ export function calcularConquistasUsuario({
     {
       id: 'peso-primeiro',
       titulo: 'Primeiro Peso',
-      descricao: 'Registre seu peso inicial para calcular seu progresso.',
+      descricao: 'Registre seu peso na balança para acompanhar seu progresso.',
       categoria: 'peso',
       blocoNome: 'Evolução de Peso & Medidas',
-      desbloqueada: Boolean(pesoAtualKg || pesoInicialKg),
-      progressoAtual: (pesoAtualKg || pesoInicialKg) ? 1 : 0,
+      desbloqueada: temPesoRegistrado,
+      progressoAtual: temPesoRegistrado ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'registro',
       iconeNome: 'balanca',
@@ -552,16 +624,16 @@ export function calcularConquistasUsuario({
     },
 
     // ==========================================
-    // 6. AVENTUREIRO (Engajamento e Recursos)
+    // 6. AVENTUREIRO (Engajamento e Recursos Reais)
     // ==========================================
     {
       id: 'av-mestre-agua',
       titulo: 'Mestre da água',
-      descricao: 'Configure seu monitoramento e metas personalizadas de água.',
+      descricao: 'Configure seu monitoramento ou registre sua hidratação diária.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
-      desbloqueada: true,
-      progressoAtual: 1,
+      desbloqueada: mestreAguaDesbloqueado,
+      progressoAtual: mestreAguaDesbloqueado ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'nível',
       iconeNome: 'gota',
@@ -572,7 +644,7 @@ export function calcularConquistasUsuario({
     {
       id: 'av-academico',
       titulo: 'Acadêmico estagiário',
-      descricao: 'Preencha suas informações pessoais e corporais.',
+      descricao: 'Preencha suas informações pessoais e corporais no Perfil.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
       desbloqueada: perfilCompleto,
@@ -587,32 +659,32 @@ export function calcularConquistasUsuario({
     {
       id: 'av-chef',
       titulo: 'Chef estagiário',
-      descricao: 'Explore os horários da janela de alimentação saudável.',
+      descricao: 'Explore os horários da janela de alimentação saudável pós-jejum.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
-      desbloqueada: false,
-      progressoAtual: 0,
+      desbloqueada: chefDesbloqueado,
+      progressoAtual: chefDesbloqueado ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'janela',
       iconeNome: 'escudo',
       rotuloBadge: 'CHEF',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: chefDesbloqueado ? 'verde' : 'prata',
     },
     {
       id: 'av-widgets',
       titulo: 'Mestre dos widgets',
-      descricao: 'Adicione atalhos rápidos ou lembretes na tela do seu telefone.',
+      descricao: 'Ative os lembretes inteligentes e alertas no seu telefone.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
-      desbloqueada: false,
-      progressoAtual: 0,
+      desbloqueada: ativouLembretesOuWidgets,
+      progressoAtual: ativouLembretesOuWidgets ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'widget',
       iconeNome: 'escudo',
       rotuloBadge: 'WIDGET',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: ativouLembretesOuWidgets ? 'verde' : 'prata',
     },
     {
       id: 'av-nuvem',
@@ -620,8 +692,8 @@ export function calcularConquistasUsuario({
       descricao: 'Mantenha seus dados sincronizados ou exporte seu backup LGPD.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
-      desbloqueada: true,
-      progressoAtual: 1,
+      desbloqueada: sincronizouNuvemOuBackup,
+      progressoAtual: sincronizouNuvemOuBackup ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'backup',
       iconeNome: 'escudo',
@@ -635,8 +707,8 @@ export function calcularConquistasUsuario({
       descricao: 'Compartilhe um progresso ou medalha com seus amigos.',
       categoria: 'aventureiro',
       blocoNome: 'Aventureiro',
-      desbloqueada: true,
-      progressoAtual: 1,
+      desbloqueada: compartilhouConquista,
+      progressoAtual: compartilhouConquista ? 1 : 0,
       progressoTotal: 1,
       unidadeProgresso: 'post',
       iconeNome: 'escudo',
@@ -654,29 +726,29 @@ export function calcularConquistasUsuario({
       descricao: 'Complete o desafio especial de 7 dias seguidos de jejum.',
       categoria: 'desafio',
       blocoNome: 'Vencedor do desafio',
-      desbloqueada: diasConsecutivos >= 7,
-      progressoAtual: Math.min(7, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 7,
+      progressoAtual: Math.min(7, streakEfetivo),
       progressoTotal: 7,
       unidadeProgresso: 'dias',
       iconeNome: 'desafio',
       rotuloBadge: '7-DAY',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: streakEfetivo >= 7 ? 'dourado' : 'prata',
     },
     {
       id: 'desafio-14dias',
       titulo: 'Jejum de 14 dias',
-      descricao: 'Complete o desafio intensivo de 14 dias consecutivo.',
+      descricao: 'Complete o desafio intensivo de 14 dias consecutivos.',
       categoria: 'desafio',
       blocoNome: 'Vencedor do desafio',
-      desbloqueada: diasConsecutivos >= 14,
-      progressoAtual: Math.min(14, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 14,
+      progressoAtual: Math.min(14, streakEfetivo),
       progressoTotal: 14,
       unidadeProgresso: 'dias',
       iconeNome: 'desafio',
       rotuloBadge: '14-DAY',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: streakEfetivo >= 14 ? 'dourado' : 'prata',
     },
     {
       id: 'desafio-21dias',
@@ -684,19 +756,19 @@ export function calcularConquistasUsuario({
       descricao: 'Complete o desafio de transformação de 21 dias.',
       categoria: 'desafio',
       blocoNome: 'Vencedor do desafio',
-      desbloqueada: diasConsecutivos >= 21,
-      progressoAtual: Math.min(21, diasConsecutivos),
+      desbloqueada: streakEfetivo >= 21,
+      progressoAtual: Math.min(21, streakEfetivo),
       progressoTotal: 21,
       unidadeProgresso: 'dias',
       iconeNome: 'desafio',
       rotuloBadge: '21-DAY',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: streakEfetivo >= 21 ? 'dourado' : 'prata',
     },
     {
       id: 'desafio-primavera',
       titulo: 'Perda de peso na primavera',
-      descricao: 'Participe da temporada especial de primavera e alcance sua meta.',
+      descricao: 'Participe da temporada especial de primavera e conclua 20 jejuns.',
       categoria: 'desafio',
       blocoNome: 'Vencedor do desafio',
       desbloqueada: countJejuns >= 20,
@@ -706,7 +778,7 @@ export function calcularConquistasUsuario({
       iconeNome: 'desafio',
       rotuloBadge: '20 Fasts',
       estiloBadge: 'escudo',
-      corTema: 'prata',
+      corTema: countJejuns >= 20 ? 'esmeralda' : 'prata',
     },
   ];
 

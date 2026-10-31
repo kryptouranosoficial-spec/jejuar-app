@@ -27,12 +27,22 @@ export interface DadosPerfilUsuario {
   avatarPredefinidoId?: string | null;
   /** Tipo de assinatura ou plano ativo */
   plano: TipoPlanoUsuario;
-  /** Gênero do usuário para cálculos metabólicos */
-  genero?: string;
-  /** Altura em centímetros */
+  /** Sexo biológico do usuário para cálculos metabólicos ('feminino' | 'masculino') */
+  genero?: 'feminino' | 'masculino' | string;
+  /** Altura em centímetros (ex: 170) */
   altura?: number;
-  /** Peso atual em kg */
+  /** Peso inicial registrado no Onboarding em kg (ex: 80.0) */
+  pesoInicial?: number;
+  /** Peso atual em kg (ex: 76.5) */
   peso?: number;
+  /** Meta de peso desejado em kg (ex: 68.0) */
+  pesoDesejado?: number;
+  /** Objetivo principal escolhido no Onboarding (ex: 'perder_peso') */
+  objetivoPrincipal?: string;
+  /** Nível de experiência com jejum escolhido no Onboarding (ex: 'primeira_vez') */
+  experienciaJejum?: string;
+  /** Ano de nascimento sincronizado com a data de nascimento */
+  anoNascimento?: number;
   /** Data de última atualização dos dados */
   atualizadoEm?: unknown;
 }

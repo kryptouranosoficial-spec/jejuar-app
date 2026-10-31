@@ -23,6 +23,7 @@ import type {
   RegistroBioimpedancia,
   ConfiguracaoRetesteBioimpedancia,
 } from '../types/bioimpedancia';
+import { notificarAtualizacaoGamificacao } from '../utils/perfilUtils';
 
 const CHAVE_STORAGE_PREFIX = 'jejuar_bioimpedancias_';
 const CHAVE_CONFIG_PREFIX = 'jejuar_bio_config_';
@@ -148,6 +149,7 @@ export async function salvarNovoExameBioimpedancia(
     }
   }
 
+  notificarAtualizacaoGamificacao();
   return novoRegistro;
 }
 
@@ -187,6 +189,7 @@ export async function atualizarExameBioimpedancia(
       console.warn('Edição salva localmente. Sincronização em nuvem pendente:', erro);
     }
   }
+  notificarAtualizacaoGamificacao();
 }
 
 /**
@@ -210,6 +213,17 @@ export async function excluirExameBioimpedancia(
       console.warn('Exclusão executada localmente. Sincronização remota pendente:', erro);
     }
   }
+  notificarAtualizacaoGamificacao();
+}
+
+/**
+ * Normaliza a frequência de dias para uma das opções válidas (7, 15 ou 30 dias).
+ */
+function normalizarFrequenciaDias(dias?: number): number {
+  if (dias === 7 || dias === 15 || dias === 30) return dias;
+  if (dias && dias <= 10) return 7;
+  if (dias && dias <= 22) return 15;
+  return 30;
 }
 
 /**
@@ -219,15 +233,38 @@ export async function obterConfiguracaoReteste(
   usuarioId: string
 ): Promise<ConfiguracaoRetesteBioimpedancia> {
   const padrao: ConfiguracaoRetesteBioimpedancia = {
-    frequenciaDias: 30,
+    frequenciaDias: 15,
     lembretesAtivos: true,
+    horaLembrete: '08:00',
+    somLembrete: 'Padrão',
   };
 
   if (typeof window !== 'undefined') {
     const cache = localStorage.getItem(`${CHAVE_CONFIG_PREFIX}${usuarioId || 'padrao'}`);
     if (cache) {
       try {
-        return { ...padrao, ...JSON.parse(cache) };
+        const parsed = JSON.parse(cache);
+        return {
+          ...padrao,
+          ...parsed,
+          frequenciaDias: normalizarFrequenciaDias(Number(parsed.frequenciaDias)),
+        };
+      } catch {}
+    }
+
+    const salvoJejum = localStorage.getItem('jejuar_config_jejum');
+    if (salvoJejum) {
+      try {
+        const objJejum = JSON.parse(salvoJejum);
+        const n = objJejum?.notificacoes;
+        if (n && n.bioimpedanciaIntervaloDias !== undefined) {
+          return {
+            frequenciaDias: normalizarFrequenciaDias(Number(n.bioimpedanciaIntervaloDias)),
+            lembretesAtivos: n.bioimpedanciaLembreteAtivo ?? true,
+            horaLembrete: n.bioimpedanciaHora || '08:00',
+            somLembrete: n.bioimpedanciaSom || 'Padrão',
+          };
+        }
       } catch {}
     }
   }
@@ -238,7 +275,11 @@ export async function obterConfiguracaoReteste(
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const dados = snap.data() as ConfiguracaoRetesteBioimpedancia;
-        return { ...padrao, ...dados };
+        return {
+          ...padrao,
+          ...dados,
+          frequenciaDias: normalizarFrequenciaDias(Number(dados.frequenciaDias)),
+        };
       }
     } catch {}
   }
@@ -247,24 +288,60 @@ export async function obterConfiguracaoReteste(
 }
 
 /**
- * Salva a preferência de frequência de reteste da bioimpedância.
+ * Salva a preferência de frequência de reteste da bioimpedância e sincroniza com as notificações gerais.
  */
 export async function salvarConfiguracaoReteste(
   usuarioId: string,
   config: ConfiguracaoRetesteBioimpedancia
 ): Promise<void> {
+  const freqNormalizada = normalizarFrequenciaDias(config.frequenciaDias);
+  const hora = config.horaLembrete || '08:00';
+  const som = config.somLembrete || 'Padrão';
+  const configFinal: ConfiguracaoRetesteBioimpedancia = {
+    ...config,
+    frequenciaDias: freqNormalizada,
+    horaLembrete: hora,
+    somLembrete: som,
+  };
+
   if (typeof window !== 'undefined') {
-    localStorage.setItem(
-      `${CHAVE_CONFIG_PREFIX}${usuarioId || 'padrao'}`,
-      JSON.stringify(config)
-    );
+    try {
+      localStorage.setItem(
+        `${CHAVE_CONFIG_PREFIX}${usuarioId || 'padrao'}`,
+        JSON.stringify(configFinal)
+      );
+
+      const salvoJejum = localStorage.getItem('jejuar_config_jejum');
+      if (salvoJejum) {
+        const objJejum = JSON.parse(salvoJejum);
+        if (!objJejum.notificacoes) objJejum.notificacoes = {};
+        objJejum.notificacoes.bioimpedanciaLembreteAtivo = configFinal.lembretesAtivos;
+        objJejum.notificacoes.bioimpedanciaIntervaloDias = freqNormalizada;
+        objJejum.notificacoes.bioimpedanciaHora = hora;
+        objJejum.notificacoes.bioimpedanciaSom = som;
+        localStorage.setItem('jejuar_config_jejum', JSON.stringify(objJejum));
+      }
+    } catch {}
   }
 
   if (usuarioId) {
     try {
       const docRef = doc(db, 'usuarios', usuarioId, 'configuracoes', 'bioimpedancia');
       await setDoc(docRef, {
-        ...config,
+        ...configFinal,
+        atualizadoEm: serverTimestamp(),
+      }, { merge: true });
+
+      const usuarioRef = doc(db, 'usuarios', usuarioId);
+      await setDoc(usuarioRef, {
+        configuracoesJejum: {
+          notificacoes: {
+            bioimpedanciaLembreteAtivo: configFinal.lembretesAtivos,
+            bioimpedanciaIntervaloDias: freqNormalizada,
+            bioimpedanciaHora: hora,
+            bioimpedanciaSom: som,
+          }
+        },
         atualizadoEm: serverTimestamp(),
       }, { merge: true });
     } catch (err) {

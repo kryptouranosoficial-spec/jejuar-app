@@ -50,7 +50,7 @@ import { ModalGaleriaConquistas } from './inicio/ModalGaleriaConquistas';
 import { ModalDetalheConquista } from './perfil/ModalDetalheConquista';
 import { CarrosselDicasDoDia } from './inicio/CarrosselDicasDoDia';
 import type { ConquistaUsuario } from '../types';
-import { calcularConquistasUsuario } from '../utils/conquistasUtils';
+import { useGamificacaoUsuario } from '../hooks/useGamificacaoUsuario';
 import { CentralNotificacoesScreen } from './notificacoes/CentralNotificacoesScreen';
 import { 
   listarNotificacoesInternas, 
@@ -61,14 +61,25 @@ import {
   agendarMarcosBiometricosJejum, 
   cancelarNotificacoesJejum,
   agendarNotificacoesProcessoJejum,
-  cancelarNotificacoesProcessoJejum
+  cancelarNotificacoesProcessoJejum,
+  agendarNotificacoesPeso,
+  verificarDiaSemanaPesoValido,
+  agendarNotificacoesBioimpedancia,
+  cancelarNotificacoesBioimpedancia,
+  calcularDataAlvoBioimpedancia,
+  registrarOuvinteCliqueNotificacaoNativa,
+  dispararNotificacaoExternaSistema,
+  verificarHorarioNaoPerturbe
 } from '../services/localNotificationService';
+import { listarBioimpedancias } from '../services/bioimpedanciaService';
+import { gerarMarcosBiometricosJejum } from '../utils/biometriaMarcosUtils';
 import { BioimpedanciaScreen } from './bioimpedancia/BioimpedanciaScreen';
 import { JornadaScreen } from './jornada/JornadaScreen';
 import { PerfilScreen } from './perfil/PerfilScreen';
 import { 
   obterAssinaturaPushAtual, 
-  obterStatusPermissaoNotificacao 
+  obterStatusPermissaoNotificacao,
+  sincronizarAssinaturaSilenciosa
 } from '../services/pushNotificationService';
 
 interface InicioScreenProps {
@@ -88,15 +99,94 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
   // Aba ativa no card de Dica do Dia / Biometria (permite abrir diretamente pelo clique na notificação)
   const [abaCardDica, setAbaCardDica] = useState<'dica' | 'biometria'>('dica');
 
-  // Detecta se este dispositivo possui push ativo e carrega contagem de notificações não lidas
+  // Detecta se este dispositivo possui push ativo, sincroniza token FCM silenciosamente e trata clique na notificação externa
   useEffect(() => {
     obterAssinaturaPushAtual().then((sub) => {
       setNotificacoesPushAtivas(Boolean(sub));
     }).catch(() => {});
 
+    if (usuario?.id) {
+      sincronizarAssinaturaSilenciosa(usuario.id).then((ativo) => {
+        if (ativo) setNotificacoesPushAtivas(true);
+      }).catch(() => {});
+    }
+
     listarNotificacoesInternas(usuario?.id || '').then((lista) => {
       setTotalNaoLidasInternas(contarNaoLidas(lista));
     }).catch(() => {});
+
+    // Verifica se o app foi aberto através do toque em uma notificação externa de Biometria (?tab=biometria)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'biometria') {
+        setAbaAtiva('jejum');
+        setAbaCardDica('biometria');
+      } else if (tabParam === 'agua') {
+        setTelaRastreadorAguaAberta(true);
+      } else if (tabParam === 'peso') {
+        setTelaDadosCorporaisAberta(true);
+      } else if (tabParam === 'jornada') {
+        setAbaAtiva('jornada');
+      } else if (tabParam === 'bioimpedancia') {
+        setAbaAtiva('exames');
+      }
+    }
+
+    // Escuta cliques em notificações nativas do Android/iOS (Capacitor LocalNotifications)
+    let removerOuvinteNativo: (() => void) | undefined;
+    registrarOuvinteCliqueNotificacaoNativa((acao, url) => {
+      if (acao === 'peso' || acao === 'lembrete_peso' || url.includes('tab=peso')) {
+        setTelaCentralNotificacoesAberta(false);
+        setTelaDadosCorporaisAberta(true);
+      } else if (acao === 'bioimpedancia' || acao === 'lembrete_bioimpedancia' || url.includes('tab=bioimpedancia')) {
+        setTelaCentralNotificacoesAberta(false);
+        setAbaAtiva('exames');
+      } else if (acao === 'biometria' || acao === 'marco_biometrico' || url.includes('tab=biometria')) {
+        setTelaCentralNotificacoesAberta(false);
+        setAbaAtiva('jejum');
+        setAbaCardDica('biometria');
+      } else if (acao === 'agua' || url.includes('tab=agua')) {
+        setTelaCentralNotificacoesAberta(false);
+        setTelaRastreadorAguaAberta(true);
+      }
+    }).then((cleanup) => {
+      removerOuvinteNativo = cleanup;
+    }).catch(() => {});
+
+    // Escuta mensagens diretas do Service Worker quando o usuário toca na notificação externa com o app em segundo plano
+    const handleMensagemSW = (evento: MessageEvent) => {
+      if (evento.data?.tipo === 'NOTIFICACAO_CLICADA') {
+        const url = String(evento.data.url || '');
+        const acao = String(evento.data.acao || '');
+        if (acao === 'peso' || acao === 'lembrete_peso' || url.includes('tab=peso')) {
+          setTelaCentralNotificacoesAberta(false);
+          setTelaDadosCorporaisAberta(true);
+        } else if (acao === 'bioimpedancia' || acao === 'lembrete_bioimpedancia' || url.includes('tab=bioimpedancia')) {
+          setTelaCentralNotificacoesAberta(false);
+          setAbaAtiva('exames');
+        } else if (acao === 'biometria' || acao === 'marco_biometrico' || url.includes('tab=biometria')) {
+          setTelaCentralNotificacoesAberta(false);
+          setAbaAtiva('jejum');
+          setAbaCardDica('biometria');
+        } else if (url.includes('tab=agua')) {
+          setTelaRastreadorAguaAberta(true);
+        } else if (url.includes('tab=jornada')) {
+          setAbaAtiva('jornada');
+        }
+      }
+    };
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleMensagemSW);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleMensagemSW);
+        if (removerOuvinteNativo) removerOuvinteNativo();
+      };
+    }
+    return () => {
+      if (removerOuvinteNativo) removerOuvinteNativo();
+    };
   }, [usuario?.id]);
 
   // Sequência de dias consecutivos do usuário (Streak) com cache local resiliente
@@ -335,7 +425,24 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     }
   }, [usuario?.id, metaAgua]);
 
-  // Sincroniza grade nativa de notificações do processo de jejum no hardware do smartphone
+  // Dados sincronizados do onboarding e dados corporais do usuário
+  const [pesoAtual, setPesoAtual] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const salvo = localStorage.getItem('jejuar_peso_atual');
+      if (salvo) return Number(salvo);
+    }
+    return usuario?.informacoesBasicas?.peso || 72.4;
+  });
+
+  const [pesoDesejado, setPesoDesejado] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const salvo = localStorage.getItem('jejuar_peso_meta');
+      if (salvo) return Number(salvo);
+    }
+    return usuario?.informacoesBasicas?.pesoDesejado || 66.0;
+  });
+
+  // Sincroniza grade nativa de notificações do processo de jejum e marcos biométricos no hardware do smartphone
   useEffect(() => {
     buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
       if (cfg && cfg.notificacoes) {
@@ -347,9 +454,230 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
           metaHoras: planoAtivo.horasJejum,
           nomePlano: planoAtivo.nome,
         }).catch(() => {});
+
+        agendarNotificacoesPeso({
+          ativo: cfg.notificacoes.pesoLembreteAtivo ?? true,
+          hora: cfg.notificacoes.pesoHora || '08:00',
+          dias: cfg.notificacoes.pesoDias || 'Todos os dias',
+        }).catch(() => {});
+
+        listarBioimpedancias(usuario?.id || '')
+          .then((exames) => {
+            const ultimo = exames.length > 0 ? exames[0] : null;
+            return agendarNotificacoesBioimpedancia({
+              ativo: cfg.notificacoes.bioimpedanciaLembreteAtivo ?? true,
+              hora: cfg.notificacoes.bioimpedanciaHora || '08:00',
+              intervaloDias: Number(cfg.notificacoes.bioimpedanciaIntervaloDias) || 15,
+              dataUltimoExame: ultimo?.dataExame || null,
+            });
+          })
+          .catch(() => {});
+
+        if (jejumAtivo && inicioTimestamp) {
+          agendarMarcosBiometricosJejum(
+            new Date(inicioTimestamp),
+            planoAtivo.horasJejum,
+            planoAtivo.nome,
+            pesoAtual,
+            cfg.notificacoes
+          ).catch(() => {});
+        }
       }
     }).catch((err) => console.warn('Aviso ao sincronizar notificações do processo de jejum:', err));
-  }, [usuario?.id, jejumAtivo, inicioTimestamp, planoAtivo.horasJejum, planoAtivo.nome]);
+  }, [usuario?.id, jejumAtivo, inicioTimestamp, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual]);
+
+  // Monitoramento ativo do lembrete de registro de peso (dispara notificação interna + externa no dia e horário configurados)
+  useEffect(() => {
+    const verificarLembretePeso = async () => {
+      try {
+        const agora = new Date();
+        const hojeStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+        const chaveEmitidoHoje = `jejuar_alerta_peso_emitido_${hojeStr}`;
+
+        if (typeof window !== 'undefined' && localStorage.getItem(chaveEmitidoHoje)) {
+          return;
+        }
+
+        const cfg = await buscarConfiguracoesJejumFirestore(usuario?.id || '');
+        const notif = cfg?.notificacoes;
+        if (!notif || notif.pesoLembreteAtivo === false) return;
+
+        const horaConfig = notif.pesoHora || '08:00';
+        const diasConfig = notif.pesoDias || 'Todos os dias';
+
+        if (!verificarDiaSemanaPesoValido(diasConfig, agora)) {
+          return;
+        }
+
+        const [hPeso, mPeso] = horaConfig.split(':').map(Number);
+        const minPeso = (isNaN(hPeso) ? 8 : hPeso) * 60 + (isNaN(mPeso) ? 0 : mPeso);
+        const minAtual = agora.getHours() * 60 + agora.getMinutes();
+
+        // Se o horário configurado de hoje já chegou, emite a notificação interna e externa
+        if (minAtual >= minPeso) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(chaveEmitidoHoje, 'true');
+          }
+
+          const tituloPeso = '⚖️ Hora de Registrar seu Peso!';
+          const mensagemPeso = 'Bom dia! Suba na balança em jejum para acompanhar sua evolução corporal com consistência.';
+
+          // 1. Registra na Central de Notificações Internas do aplicativo com ação direta para Dados Corporais
+          emitirNotificacaoInterna(usuario?.id || '', {
+            id: `lembrete_peso_${hojeStr}`,
+            titulo: tituloPeso,
+            mensagem: mensagemPeso,
+            categoria: 'aviso',
+            icone: 'scale',
+            remetente: 'Check-in Corporal',
+            acaoLink: 'peso',
+            acaoTexto: 'Registrar Peso',
+          })
+            .then((lista) => {
+              setTotalNaoLidasInternas(contarNaoLidas(lista));
+            })
+            .catch(() => {});
+
+          // 2. Dispara notificação externa na barra do celular/navegador (respeitando Não Perturbe)
+          const emSilencio = verificarHorarioNaoPerturbe(
+            agora,
+            Boolean(notif.naoPerturbeAtivo),
+            notif.naoPerturbeHoraInicio || '23:00',
+            notif.naoPerturbeHoraFim || '07:00'
+          );
+
+          dispararNotificacaoExternaSistema({
+            titulo: tituloPeso,
+            corpo: mensagemPeso,
+            tag: `lembrete-peso-${hojeStr}`,
+            silenciosa: emSilencio,
+            url: '/?tab=peso',
+          }).catch(() => {});
+
+          // 3. Exibe o Toast no topo caso o usuário esteja com o app aberto
+          setToastConfig({
+            visivel: true,
+            titulo: tituloPeso,
+            mensagem: mensagemPeso,
+          });
+        }
+      } catch (err) {
+        console.warn('Aviso ao verificar lembrete de peso:', err);
+      }
+    };
+
+    verificarLembretePeso();
+    const timerPeso = setInterval(verificarLembretePeso, 30000);
+    return () => clearInterval(timerPeso);
+  }, [usuario?.id]);
+
+  // Monitoramento ativo do lembrete de Bioimpedância (dispara na data exata de 7, 15 ou 30 dias após o último exame)
+  useEffect(() => {
+    const verificarLembreteBioimpedancia = async () => {
+      try {
+        const agora = new Date();
+        const hojeStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+        const chaveEmitidoHoje = `jejuar_alerta_bio_emitido_${hojeStr}`;
+
+        if (typeof window !== 'undefined' && localStorage.getItem(chaveEmitidoHoje)) {
+          return;
+        }
+
+        // Regra de Ouro: Se não houver nenhum registro de Bioimpedância, nenhum alarme deve existir
+        const exames = await listarBioimpedancias(usuario?.id || '');
+        if (!exames || exames.length === 0) {
+          cancelarNotificacoesBioimpedancia().catch(() => {});
+          return;
+        }
+
+        const ultimoExame = exames[0];
+        if (!ultimoExame?.dataExame) return;
+
+        const cfg = await buscarConfiguracoesJejumFirestore(usuario?.id || '');
+        const notif = cfg?.notificacoes;
+        if (!notif || notif.bioimpedanciaLembreteAtivo === false) return;
+
+        const horaConfig = notif.bioimpedanciaHora || '08:00';
+        const intervaloDias =
+          notif.bioimpedanciaIntervaloDias === 7 ||
+          notif.bioimpedanciaIntervaloDias === 15 ||
+          notif.bioimpedanciaIntervaloDias === 30
+            ? notif.bioimpedanciaIntervaloDias
+            : 15;
+
+        const dataAlvo = calcularDataAlvoBioimpedancia(
+          ultimoExame.dataExame,
+          intervaloDias,
+          horaConfig
+        );
+
+        if (!dataAlvo) return;
+
+        const dataAlvoStr = `${dataAlvo.getFullYear()}-${String(dataAlvo.getMonth() + 1).padStart(2, '0')}-${String(dataAlvo.getDate()).padStart(2, '0')}`;
+
+        // Verifica se hoje é exatamente a data programada do ciclo (7, 15 ou 30 dias após o último exame)
+        if (hojeStr !== dataAlvoStr) return;
+
+        const [hBio, mBio] = horaConfig.split(':').map(Number);
+        const minBio = (isNaN(hBio) ? 8 : hBio) * 60 + (isNaN(mBio) ? 0 : mBio);
+        const minAtual = agora.getHours() * 60 + agora.getMinutes();
+
+        if (minAtual >= minBio) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(chaveEmitidoHoje, 'true');
+          }
+
+          const tituloBio = '🧬 Hora da sua Nova Bioimpedância!';
+          const mensagemBio = `Completaram-se ${intervaloDias} dias desde a sua última bioimpedância. Registre um novo exame para acompanhar sua evolução!`;
+
+          // 1. Registra na Central de Notificações Internas do aplicativo com ação direta para a aba Exames
+          emitirNotificacaoInterna(usuario?.id || '', {
+            id: `lembrete_bio_${hojeStr}`,
+            titulo: tituloBio,
+            mensagem: mensagemBio,
+            categoria: 'aviso',
+            icone: 'sparkles',
+            remetente: 'Exames & Bioimpedância',
+            acaoLink: 'bioimpedancia',
+            acaoTexto: 'Abrir Exames',
+          })
+            .then((lista) => {
+              setTotalNaoLidasInternas(contarNaoLidas(lista));
+            })
+            .catch(() => {});
+
+          // 2. Dispara notificação externa na barra do celular/navegador (respeitando Não Perturbe)
+          const emSilencio = verificarHorarioNaoPerturbe(
+            agora,
+            Boolean(notif.naoPerturbeAtivo),
+            notif.naoPerturbeHoraInicio || '23:00',
+            notif.naoPerturbeHoraFim || '07:00'
+          );
+
+          dispararNotificacaoExternaSistema({
+            titulo: tituloBio,
+            corpo: mensagemBio,
+            tag: `lembrete-bioimpedancia-${hojeStr}`,
+            silenciosa: emSilencio,
+            url: '/?tab=bioimpedancia',
+          }).catch(() => {});
+
+          // 3. Exibe o Toast no topo caso o usuário esteja com o app aberto
+          setToastConfig({
+            visivel: true,
+            titulo: tituloBio,
+            mensagem: mensagemBio,
+          });
+        }
+      } catch (err) {
+        console.warn('Aviso ao verificar lembrete de bioimpedância:', err);
+      }
+    };
+
+    verificarLembreteBioimpedancia();
+    const timerBio = setInterval(verificarLembreteBioimpedancia, 30000);
+    return () => clearInterval(timerBio);
+  }, [usuario?.id]);
 
   // Monitoramento ativo de lembrete de água em primeiro plano (com o aplicativo aberto)
   useEffect(() => {
@@ -436,26 +764,16 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     return () => clearInterval(intervalId);
   }, [configAgua]);
 
-  // Cálculo reativo das conquistas e medalhas em tempo real
-  const conquistas = useMemo(() => {
-    return calcularConquistasUsuario({
-      diasConsecutivos,
-      aguaConsumidaHoje: aguaConsumida,
-      metaAguaHoje: metaAgua,
-      historicoAgua7Dias,
-      totalJejunsConcluidos: diasConsecutivos,
-    });
-  }, [diasConsecutivos, aguaConsumida, metaAgua, historicoAgua7Dias]);
-
-  // Dados sincronizados do onboarding e dados corporais do usuário
-  const [pesoAtual, setPesoAtual] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const salvo = localStorage.getItem('jejuar_peso_atual');
-      if (salvo) return Number(salvo);
-    }
-    return usuario?.informacoesBasicas?.peso || 72.4;
+  // Cálculo reativo e unificado das conquistas e medalhas em tempo real (Jejuns, Água, Peso, Medidas, Bioimpedância e Aventureiro)
+  const { conquistas } = useGamificacaoUsuario({
+    usuario,
+    diasConsecutivos,
+    aguaConsumidaHoje: aguaConsumida,
+    metaAguaHoje: metaAgua,
+    pesoAtualOverride: pesoAtual,
+    emJanelaAlimentacao,
+    notificacoesPushAtivas,
   });
-  const pesoDesejado = usuario?.informacoesBasicas?.pesoDesejado || 66.0;
 
   // Sincroniza estado de jejum quando as props do Firestore forem carregadas ou atualizadas
   useEffect(() => {
@@ -574,57 +892,80 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
   };
 
-  // Avaliação e emissão de marcos biométricos em tempo real na Central de Notificações Internas
+  // Avaliação e emissão de marcos biométricos (4h até 168h + meta) na barra externa do celular e na Central Interna
   useEffect(() => {
     if (!jejumAtivo || !inicioTimestamp || segundosJejum <= 0) return;
 
     const horasDecorridas = segundosJejum / 3600;
-    const fatorPeso = (pesoAtual || 72.4) / 70;
+    const marcos = gerarMarcosBiometricosJejum(
+      planoAtivo.horasJejum,
+      planoAtivo.nome,
+      pesoAtual || 72.4
+    );
 
-    // Marcos biológicos com estimativas metabólicas e oxidativas
-    const marcos = [
-      {
-        horas: 8,
-        titulo: '⚡ 8h de Jejum: Insulina no menor nível!',
-        mensagem: 'Seu fígado começou a liberar ácidos graxos estocados. Toque para ver sua estimativa de queima!',
-      },
-      {
-        horas: 12,
-        titulo: '🔥 12h de Jejum: Cetose Ativada!',
-        mensagem: `Cetonas alimentando seu cérebro! Estimativa de hoje: ~${Math.round(12 * 2.8 * fatorPeso)}g de gordura pura oxidada.`,
-      },
-      {
-        horas: 14,
-        titulo: '🔬 14h de Jejum: Queima Lipídica Profunda!',
-        mensagem: `Você atingiu 14h! Suas mitocôndrias ativaram a queima lipídica profunda. Estimativa de hoje: ~${Math.round(14 * 2.8 * fatorPeso)}g de gordura pura oxidada.`,
-      },
-      {
-        horas: planoAtivo.horasJejum,
-        titulo: `✨ Meta de ${planoAtivo.horasJejum}h Atingida! (${planoAtivo.nome})`,
-        mensagem: `Autofagia celular no pico máximo e ~${Math.round(planoAtivo.horasJejum * 3.2 * fatorPeso)}g de gordura oxidada. Parabéns!`,
-      },
-    ];
+    const marcosAtingidos = marcos.filter((m) => horasDecorridas >= m.horas);
+    if (marcosAtingidos.length === 0) return;
 
-    for (const marco of marcos) {
-      if (horasDecorridas >= marco.horas) {
-        const idNotif = `biometria_${inicioTimestamp.slice(0, 10)}_${marco.horas}h`;
-        emitirNotificacaoInterna(usuario?.id || '', {
-          id: idNotif,
-          titulo: marco.titulo,
-          mensagem: marco.mensagem,
-          categoria: 'conquista',
-          dataIso: new Date().toISOString(),
-          lida: false,
-          acaoLink: 'biometria',
-          acaoTexto: 'Ver Biometria',
-          remetente: 'Insight Biométrico',
-          icone: 'flame',
-        }).then(() => {
-          listarNotificacoesInternas(usuario?.id || '').then((lista) => {
-            setTotalNaoLidasInternas(contarNaoLidas(lista));
-          }).catch(() => {});
+    // Identifica o marco mais recente atingido para disparo externo no sistema operacional do celular
+    const ultimoMarcoAtingido = marcosAtingidos[marcosAtingidos.length - 1];
+
+    for (const marco of marcosAtingidos) {
+      const idNotif = `biometria_${inicioTimestamp.slice(0, 10)}_${marco.horas}h`;
+      emitirNotificacaoInterna(usuario?.id || '', {
+        id: idNotif,
+        titulo: marco.titulo,
+        mensagem: marco.mensagem,
+        categoria: 'conquista',
+        dataIso: new Date().toISOString(),
+        lida: false,
+        acaoLink: 'biometria',
+        acaoTexto: 'Ver Biometria',
+        remetente: 'Insight Biométrico',
+        icone: 'flame',
+      }).then(() => {
+        listarNotificacoesInternas(usuario?.id || '').then((lista) => {
+          setTotalNaoLidasInternas(contarNaoLidas(lista));
         }).catch(() => {});
+      }).catch(() => {});
+    }
+
+    // Dispara também a notificação externa no sistema operacional do celular (caso ainda não tenha sido disparada nesta sessão)
+    const chaveDisparoExterno = `jejuar_push_ext_${inicioTimestamp}_${ultimoMarcoAtingido.horas}h`;
+    const jaDisparadoNoAparelho = typeof window !== 'undefined' ? localStorage.getItem(chaveDisparoExterno) : 'true';
+
+    if (!jaDisparadoNoAparelho && typeof window !== 'undefined') {
+      localStorage.setItem(chaveDisparoExterno, 'true');
+
+      // Marca todos os marcos anteriores da mesma sessão para evitar alertas atrasados repetidos
+      for (const mAnterior of marcosAtingidos) {
+        localStorage.setItem(`jejuar_push_ext_${inicioTimestamp}_${mAnterior.horas}h`, 'true');
       }
+
+      buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+        const notifs = cfg?.notificacoes;
+        const emSilencio = verificarHorarioNaoPerturbe(
+          new Date(),
+          Boolean(notifs?.naoPerturbeAtivo),
+          notifs?.naoPerturbeHoraInicio || '23:00',
+          notifs?.naoPerturbeHoraFim || '07:00'
+        );
+
+        dispararNotificacaoExternaSistema({
+          titulo: ultimoMarcoAtingido.titulo,
+          corpo: ultimoMarcoAtingido.mensagem,
+          tag: `jejum-biometria-${ultimoMarcoAtingido.horas}h`,
+          silenciosa: emSilencio,
+          url: '/?tab=biometria',
+        }).catch(() => {});
+      }).catch(() => {
+        dispararNotificacaoExternaSistema({
+          titulo: ultimoMarcoAtingido.titulo,
+          corpo: ultimoMarcoAtingido.mensagem,
+          tag: `jejum-biometria-${ultimoMarcoAtingido.horas}h`,
+          silenciosa: false,
+          url: '/?tab=biometria',
+        }).catch(() => {});
+      });
     }
   }, [jejumAtivo, inicioTimestamp, Math.floor(segundosJejum / 3600), pesoAtual, planoAtivo.horasJejum, planoAtivo.nome, usuario?.id]);
 
@@ -665,7 +1006,7 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
       localStorage.removeItem('jejuar_inicio_janela_timestamp');
     }
 
-    // Persiste o início imediato no Firestore
+    // Persiste o início imediato no Firestore e reinicia todas as flags de envio de Web Push do servidor
     if (usuario?.id) {
       salvarEstadoJejumUsuarioFirestore(usuario.id, {
         emJejum: true,
@@ -676,14 +1017,27 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
         nomePlano: planoAtivo.nome,
         metaHoras: planoAtivo.horasJejum,
         diasConsecutivos,
+        marcosBiometricosEnviados: [],
+        sessaoMarcosTimestamp: dataIso,
+        alertaConclusaoEnviado: false,
+        alertaMetadeEnviado: false,
+        alerta3hEnviado: false,
+        alerta2hFimEnviado: false,
+        alerta1hFimEnviado: false,
+        alertaFimPerdidoEnviado: false,
       });
     }
 
-    // Agenda marcos biométricos e queima lipídica no hardware do smartphone via LocalNotifications
-    agendarMarcosBiometricosJejum(dataRef, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
-
-    // Agenda notificações do processo de jejum no hardware do celular
+    // Agenda notificações do processo de jejum e marcos biométricos no hardware do celular
     buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+      agendarMarcosBiometricosJejum(
+        dataRef,
+        planoAtivo.horasJejum,
+        planoAtivo.nome,
+        pesoAtual,
+        cfg?.notificacoes
+      ).catch(() => {});
+
       if (cfg && cfg.notificacoes) {
         agendarNotificacoesProcessoJejum({
           config: cfg.notificacoes,
@@ -694,7 +1048,9 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
           nomePlano: planoAtivo.nome,
         }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(() => {
+      agendarMarcosBiometricosJejum(dataRef, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
+    });
 
     const horarioFormatado = dataRef.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -747,36 +1103,32 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     let novosDias = diasConsecutivos;
     let novoUltimoDia = ultimoDiaConcluido;
 
-    // Registra na subcoleção do Firestore e ativa a Janela de Alimentação
-    if (usuario?.id) {
-      try {
-        const resultado = await registrarHistoricoJejumFirestore(
-          usuario.id,
-          {
-            planoId: planoAtivo.id,
-            nomePlano: planoAtivo.nome,
-            inicio: inicioTimestamp || agoraIso,
-            fim: dataFimIso,
-            duracaoSegundos: duracaoAtual,
-            metaHoras: planoAtivo.horasJejum,
-            metaAtingida: atingiuMeta,
-            aguaConsumidaMl: aguaConsumida,
-          },
-          diasConsecutivos,
-          ultimoDiaConcluido,
-          {
-            abrirJanelaAlimentacao: true,
-            horasJanelaAlimentacao: horasJanela,
-          }
-        );
+    // Registra na subcoleção do Firestore + cache local e ativa a Janela de Alimentação + Gamificação
+    try {
+      const resultado = await registrarHistoricoJejumFirestore(
+        usuario?.id || '',
+        {
+          planoId: planoAtivo.id,
+          nomePlano: planoAtivo.nome,
+          inicio: inicioTimestamp || agoraIso,
+          fim: dataFimIso,
+          duracaoSegundos: duracaoAtual,
+          metaHoras: planoAtivo.horasJejum,
+          metaAtingida: atingiuMeta,
+          aguaConsumidaMl: aguaConsumida,
+        },
+        diasConsecutivos,
+        ultimoDiaConcluido,
+        {
+          abrirJanelaAlimentacao: true,
+          horasJanelaAlimentacao: horasJanela,
+        }
+      );
 
-        novosDias = resultado.novosDiasConsecutivos;
-        novoUltimoDia = resultado.ultimoDiaAtualizado;
-      } catch (err) {
-        console.error("Erro ao registrar jejum no Firestore:", err);
-      }
-    } else {
-      // Fallback sem usuário autenticado
+      novosDias = resultado.novosDiasConsecutivos;
+      novoUltimoDia = resultado.ultimoDiaAtualizado;
+    } catch (err) {
+      console.error("Erro ao registrar jejum:", err);
       novosDias = diasConsecutivos + (atingiuMeta ? 1 : 0);
       novoUltimoDia = agoraIso.split('T')[0];
     }
@@ -846,11 +1198,26 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
     if (usuario?.id && jejumAtivo) {
       salvarEstadoJejumUsuarioFirestore(usuario.id, {
         inicioTimestamp: novaDataIso,
+        marcosBiometricosEnviados: [],
+        sessaoMarcosTimestamp: novaDataIso,
+        alertaConclusaoEnviado: false,
+        alerta3hEnviado: false,
+        alerta2hFimEnviado: false,
       });
     }
 
     // Reagenda marcos biométricos no hardware do dispositivo para o novo horário
-    agendarMarcosBiometricosJejum(novaData, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
+    buscarConfiguracoesJejumFirestore(usuario?.id || '').then((cfg) => {
+      agendarMarcosBiometricosJejum(
+        novaData,
+        planoAtivo.horasJejum,
+        planoAtivo.nome,
+        pesoAtual,
+        cfg?.notificacoes
+      ).catch(() => {});
+    }).catch(() => {
+      agendarMarcosBiometricosJejum(novaData, planoAtivo.horasJejum, planoAtivo.nome, pesoAtual).catch(() => {});
+    });
 
     setToastConfig({
       visivel: true,
@@ -1246,6 +1613,14 @@ export const InicioScreen: React.FC<InicioScreenProps> = ({ usuario }) => {
               onAbrirDadosCorporais={() => setTelaDadosCorporaisAberta(true)}
               onAbrirRastreadorAgua={() => setTelaRastreadorAguaAberta(true)}
               onAbrirNotificacoes={() => setTelaCentralNotificacoesAberta(true)}
+              onAtualizarBiometria={(dados) => {
+                if (typeof dados.peso === 'number' && dados.peso > 0) {
+                  setPesoAtual(dados.peso);
+                }
+                if (typeof dados.pesoDesejado === 'number' && dados.pesoDesejado > 0) {
+                  setPesoDesejado(dados.pesoDesejado);
+                }
+              }}
             />
           </main>
         )}

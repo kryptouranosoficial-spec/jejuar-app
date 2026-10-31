@@ -193,7 +193,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinalizado }) => {
 
         {/* Rodapé Limpo e Minimalista */}
         <div className="flex items-center justify-center gap-2 pt-1 text-center">
-          <span className="text-xs text-[#64748B] font-medium">v1.0.2</span>
+          <span className="text-xs text-[#64748B] font-medium">v1.0.3</span>
           <span className="w-1 h-1 rounded-full bg-slate-300" aria-hidden="true" />
           <span className="text-xs text-[#64748B] font-medium">Feito para sua longevidade</span>
         </div>

@@ -10,6 +10,7 @@
 import { doc, getDoc, updateDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import type { DadosPerfilUsuario, UsuarioEmCadastro } from '../types';
+import { notificarAtualizacaoGamificacao } from '../utils/perfilUtils';
 
 /** Chave de armazenamento local de cache do perfil */
 const CHAVE_CACHE_PERFIL = 'jejuar_perfil_dados';
@@ -49,6 +50,34 @@ export async function buscarDadosPerfil(usuarioId: string): Promise<DadosPerfilU
       const infoBasicas = data.informacoesBasicas || {};
       const perfilDoc = data.perfil || {};
 
+      const generoBruto = String(infoBasicas.genero || dadosLocais.genero || 'feminino').toLowerCase();
+      const generoNormalizado: 'feminino' | 'masculino' =
+        generoBruto === 'masculino' ? 'masculino' : 'feminino';
+
+      const pesoLocalSalvo =
+        typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_atual') || 0) : 0;
+      const pesoInicioLocalSalvo =
+        typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_inicio') || 0) : 0;
+      const pesoMetaLocalSalvo =
+        typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_meta') || 0) : 0;
+
+      const pesoAtualConsolidado =
+        Number(infoBasicas.peso) || pesoLocalSalvo || Number(dadosLocais.peso) || 68;
+      const pesoInicialConsolidado =
+        Number(infoBasicas.pesoInicial) ||
+        pesoInicioLocalSalvo ||
+        Number(dadosLocais.pesoInicial) ||
+        pesoAtualConsolidado;
+      const pesoDesejadoConsolidado =
+        Number(infoBasicas.pesoDesejado) ||
+        pesoMetaLocalSalvo ||
+        Number(dadosLocais.pesoDesejado) ||
+        Math.max(45, Math.round((pesoAtualConsolidado - 5) * 10) / 10);
+
+      // Se houver anoNascimento salvo no onboarding mas ainda não houver dataNascimento completa, mantém sincronizado
+      const anoNascimentoConsolidado =
+        Number(infoBasicas.anoNascimento) || Number(dadosLocais.anoNascimento) || undefined;
+
       const perfilConsolidado: DadosPerfilUsuario = {
         nome: data.nome || dadosLocais.nome || 'Usuário Jejuar',
         email: data.email || dadosLocais.email || '',
@@ -61,9 +90,16 @@ export async function buscarDadosPerfil(usuarioId: string): Promise<DadosPerfilU
         fotoUrl: perfilDoc.fotoUrl || dadosLocais.fotoUrl || null,
         avatarPredefinidoId: perfilDoc.avatarPredefinidoId || dadosLocais.avatarPredefinidoId || 'avatar_longevidade',
         plano: data.nivel === 'vitalicio' ? 'vitalicio' : (data.nivel === 'pro' ? 'pro' : 'pro'),
-        genero: infoBasicas.genero || dadosLocais.genero || 'feminino',
-        altura: infoBasicas.altura || dadosLocais.altura || 165,
-        peso: infoBasicas.peso || dadosLocais.peso || 68,
+        genero: generoNormalizado,
+        altura: Number(infoBasicas.altura) || Number(dadosLocais.altura) || 165,
+        peso: pesoAtualConsolidado,
+        pesoInicial: pesoInicialConsolidado,
+        pesoDesejado: pesoDesejadoConsolidado,
+        objetivoPrincipal:
+          infoBasicas.objetivoPrincipal || dadosLocais.objetivoPrincipal || 'perder_peso',
+        experienciaJejum:
+          infoBasicas.experienciaJejum || dadosLocais.experienciaJejum || 'primeira_vez',
+        anoNascimento: anoNascimentoConsolidado,
       };
 
       // Atualiza o cache local
@@ -81,37 +117,68 @@ export async function buscarDadosPerfil(usuarioId: string): Promise<DadosPerfilU
 }
 
 /**
- * Salva as alterações cadastrais do perfil tanto no Firestore quanto no LocalStorage.
+ * Salva as alterações cadastrais e dados do Onboarding tanto no Firestore quanto no LocalStorage.
  * @param usuarioId ID do usuário.
- * @param novosDados Dados cadastrais atualizados pelo usuário.
+ * @param novosDados Dados cadastrais e biométricos atualizados pelo usuário.
  */
 export async function salvarDadosPerfil(
   usuarioId: string,
   novosDados: Partial<DadosPerfilUsuario>
 ): Promise<void> {
-  // 1. Atualiza o LocalStorage imediatamente para resposta instantânea
+  // Extrai o ano da data de nascimento (DD/MM/AAAA) caso tenha sido informada
+  let anoExtraido: number | undefined = novosDados.anoNascimento;
+  if (novosDados.dataNascimento) {
+    const digitosData = novosDados.dataNascimento.replace(/\D/g, '');
+    if (digitosData.length === 8) {
+      const anoNum = parseInt(digitosData.slice(4, 8), 10);
+      if (anoNum >= 1905 && anoNum <= new Date().getFullYear()) {
+        anoExtraido = anoNum;
+      }
+    }
+  }
+
+  // 1. Atualiza o LocalStorage imediatamente para resposta instantânea em todo o app
   if (typeof window !== 'undefined') {
     try {
       const chave = `${CHAVE_CACHE_PERFIL}_${usuarioId}`;
       const cacheAtual = localStorage.getItem(chave);
       const objetoAtual = cacheAtual ? JSON.parse(cacheAtual) : {};
-      const atualizado = { ...objetoAtual, ...novosDados };
+      const atualizado = {
+        ...objetoAtual,
+        ...novosDados,
+        ...(anoExtraido ? { anoNascimento: anoExtraido } : {}),
+      };
       localStorage.setItem(chave, JSON.stringify(atualizado));
+
       if (novosDados.nome) {
         localStorage.setItem('jejuar_usuario_nome', novosDados.nome);
+      }
+      if (typeof novosDados.peso === 'number' && novosDados.peso > 0) {
+        localStorage.setItem('jejuar_peso_atual', String(novosDados.peso));
+      }
+      if (typeof novosDados.pesoInicial === 'number' && novosDados.pesoInicial > 0) {
+        localStorage.setItem('jejuar_peso_inicio', String(novosDados.pesoInicial));
+      }
+      if (typeof novosDados.pesoDesejado === 'number' && novosDados.pesoDesejado > 0) {
+        localStorage.setItem('jejuar_peso_meta', String(novosDados.pesoDesejado));
+      }
+      if (novosDados.cpfCnpj || novosDados.telefone || novosDados.dataNascimento) {
+        localStorage.setItem('jejuar_perfil_editado_completo', 'true');
       }
     } catch {
       // Ignora restrições locais
     }
   }
 
+  notificarAtualizacaoGamificacao();
+
   if (!usuarioId) return;
 
-  // 2. Persiste no Firestore
+  // 2. Persiste no Firestore (tanto em `perfil` quanto em `informacoesBasicas` para sincronia total)
   try {
     const usuarioRef = doc(db, 'usuarios', usuarioId);
     
-    // Objeto limpo sem undefined para o Firestore
+    // Objeto limpo sem undefined para o subdocumento `perfil`
     const payloadPerfil: Record<string, unknown> = {
       atualizadoEm: serverTimestamp(),
     };
@@ -123,8 +190,49 @@ export async function salvarDadosPerfil(
     if (novosDados.fotoUrl !== undefined) payloadPerfil.fotoUrl = novosDados.fotoUrl;
     if (novosDados.avatarPredefinidoId !== undefined) payloadPerfil.avatarPredefinidoId = novosDados.avatarPredefinidoId;
 
+    // Objeto para sincronizar o subdocumento `informacoesBasicas` (dados do Onboarding)
+    const payloadInfoBasicas: Record<string, unknown> = {
+      atualizadoEm: serverTimestamp(),
+    };
+
+    if (novosDados.genero !== undefined) payloadInfoBasicas.genero = novosDados.genero;
+    if (typeof novosDados.altura === 'number' && novosDados.altura > 0) {
+      payloadInfoBasicas.altura = novosDados.altura;
+    }
+    if (typeof novosDados.peso === 'number' && novosDados.peso > 0) {
+      payloadInfoBasicas.peso = novosDados.peso;
+    }
+    if (typeof novosDados.pesoInicial === 'number' && novosDados.pesoInicial > 0) {
+      payloadInfoBasicas.pesoInicial = novosDados.pesoInicial;
+    }
+    if (typeof novosDados.pesoDesejado === 'number' && novosDados.pesoDesejado > 0) {
+      payloadInfoBasicas.pesoDesejado = novosDados.pesoDesejado;
+    }
+    if (novosDados.objetivoPrincipal !== undefined) {
+      payloadInfoBasicas.objetivoPrincipal = novosDados.objetivoPrincipal;
+    }
+    if (novosDados.experienciaJejum !== undefined) {
+      payloadInfoBasicas.experienciaJejum = novosDados.experienciaJejum;
+    }
+    if (anoExtraido !== undefined) {
+      payloadInfoBasicas.anoNascimento = anoExtraido;
+    }
+
+    // Recalcula o IMC automaticamente se altura e peso estiverem presentes
+    if (
+      typeof novosDados.altura === 'number' &&
+      novosDados.altura > 0 &&
+      typeof novosDados.peso === 'number' &&
+      novosDados.peso > 0
+    ) {
+      const alturaMetros = novosDados.altura / 100;
+      const imcCalculado = Number((novosDados.peso / (alturaMetros * alturaMetros)).toFixed(1));
+      payloadInfoBasicas.imc = imcCalculado;
+    }
+
     const payloadPrincipal: Record<string, unknown> = {
       perfil: payloadPerfil,
+      informacoesBasicas: payloadInfoBasicas,
       atualizadoEm: serverTimestamp(),
     };
 
@@ -133,6 +241,7 @@ export async function salvarDadosPerfil(
     }
 
     await setDoc(usuarioRef, payloadPrincipal, { merge: true });
+    notificarAtualizacaoGamificacao();
   } catch (error) {
     console.error('[PerfilService] Erro ao persistir perfil no Firestore:', error);
     throw new Error('Não conseguimos salvar suas alterações. Verifique sua conexão e tente novamente.');
@@ -140,7 +249,45 @@ export async function salvarDadosPerfil(
 }
 
 /**
- * Altera a senha do usuário verificando a senha atual informada.
+ * Obtém a senha atualmente cadastrada do usuário no Firestore (ou cache local)
+ * para permitir validação instantânea em tempo real na tela de Alterar Senha.
+ * @param usuarioId ID do usuário autenticado.
+ */
+export async function obterSenhaAtualUsuario(usuarioId: string): Promise<string | null> {
+  if (!usuarioId) {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('jejuar_senha_cache') || null;
+    }
+    return null;
+  }
+
+  try {
+    const usuarioRef = doc(db, 'usuarios', usuarioId);
+    const snap = await getDoc(usuarioRef);
+    if (snap.exists()) {
+      const dados = snap.data();
+      if (typeof dados.senha === 'string' && dados.senha.length > 0) {
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('jejuar_senha_cache', dados.senha);
+          } catch {}
+        }
+        return dados.senha;
+      }
+    }
+  } catch (error) {
+    console.warn('[PerfilService] Aviso ao consultar senha atual para validação em tempo real:', error);
+  }
+
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('jejuar_senha_cache') || null;
+  }
+  return null;
+}
+
+/**
+ * Altera a senha do usuário verificando a senha atual informada e os requisitos de segurança
+ * (mínimo de 8 caracteres com letras e números).
  * @param usuarioId ID do usuário
  * @param senhaAtual Senha atualmente cadastrada
  * @param novaSenha Nova senha escolhida
@@ -154,8 +301,13 @@ export async function alterarSenhaPerfil(
     throw new Error('Sessão expirada. Por favor, entre novamente na sua conta.');
   }
 
-  if (!novaSenha || novaSenha.length < 6) {
-    throw new Error('A nova senha deve possuir pelo menos 6 caracteres para sua segurança.');
+  if (!novaSenha || novaSenha.length < 8) {
+    throw new Error('A nova senha deve possuir pelo menos 8 caracteres para sua segurança.');
+  }
+
+  const possuiLetrasENumeros = /[a-zA-Z]/.test(novaSenha) && /[0-9]/.test(novaSenha);
+  if (!possuiLetrasENumeros) {
+    throw new Error('A nova senha deve combinar letras e números para proteger sua conta.');
   }
 
   try {
@@ -172,13 +324,19 @@ export async function alterarSenhaPerfil(
       throw new Error('A senha atual informada está incorreta. Verifique e tente novamente.');
     }
 
-    // Grava a nova senha
+    // Grava a nova senha no Firestore
     await updateDoc(usuarioRef, {
       senha: novaSenha,
       atualizadoEm: serverTimestamp(),
     });
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('jejuar_senha_cache', novaSenha);
+      } catch {}
+    }
   } catch (error: any) {
-    if (error.message) throw error;
+    if (error?.message) throw error;
     throw new Error('Não conseguimos alterar sua senha no momento. Verifique sua conexão e tente novamente.');
   }
 }
@@ -233,6 +391,13 @@ export function exportarBackupDadosLGPD(
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('jejuar_backup_lgpd_exportado', 'true');
+    } catch {}
+  }
+  notificarAtualizacaoGamificacao();
 }
 
 /**

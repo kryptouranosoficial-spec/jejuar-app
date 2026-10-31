@@ -34,7 +34,7 @@ export const OnboardingBasicoGenero: React.FC<OnboardingBasicoGeneroProps> = ({
   onAvancar,
   onVoltar,
 }) => {
-  // Lista oficial das 3 opções com avatares fiéis ao design
+  // Lista oficial das 2 opções biológicas com avatares fiéis ao design
   const opcoes: OpcaoGenero[] = [
     {
       id: 'masculino',
@@ -72,24 +72,11 @@ export const OnboardingBasicoGenero: React.FC<OnboardingBasicoGeneroProps> = ({
         </svg>
       ),
     },
-    {
-      id: 'outros',
-      titulo: 'Outros',
-      corFundoAvatar: 'bg-[#F3E8FF]',
-      avatar: (
-        <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          {/* Silhueta neutra lilás */}
-          <circle cx="12" cy="8" fill="#C084FC" r="4.2" />
-          <path d="M4.5 21C4.5 16.8579 7.85786 13.5 12 13.5C16.1421 13.5 19.5 16.8579 19.5 21" fill="#C084FC" />
-        </svg>
-      ),
-    },
   ];
 
   // Opção atualmente selecionada
   const [opcaoSelecionada, setOpcaoSelecionada] = useState<string>(
-    generoInicial.toLowerCase() === 'masculino' ? 'masculino' :
-    generoInicial.toLowerCase() === 'outros' ? 'outros' : 'feminino'
+    generoInicial.toLowerCase() === 'masculino' ? 'masculino' : 'feminino'
   );
   const [salvando, setSalvando] = useState<boolean>(false);
   const [erro, setErro] = useState<string | null>(null);

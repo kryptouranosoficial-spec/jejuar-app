@@ -21,7 +21,12 @@ import {
   salvarConfiguracoesJejumFirestore,
   CONFIGURACAO_JEJUM_PADRAO 
 } from '../../services/firebase';
-import { agendarNotificacoesProcessoJejum } from '../../services/localNotificationService';
+import { 
+  agendarNotificacoesProcessoJejum,
+  agendarNotificacoesPeso,
+  agendarNotificacoesBioimpedancia
+} from '../../services/localNotificationService';
+import { listarBioimpedancias } from '../../services/bioimpedanciaService';
 import { ModalHoraInicioJejum } from './ModalHoraInicioJejum';
 import { NotificacoesScreen } from './NotificacoesScreen';
 
@@ -73,6 +78,24 @@ export const ConfiguracoesJejumScreen: React.FC<ConfiguracoesJejumScreenProps> =
               emJejum,
               dataInicio,
             }).catch(() => {});
+
+            agendarNotificacoesPeso({
+              ativo: dadosSalvos.notificacoes.pesoLembreteAtivo ?? true,
+              hora: dadosSalvos.notificacoes.pesoHora || '08:00',
+              dias: dadosSalvos.notificacoes.pesoDias || 'Todos os dias',
+            }).catch(() => {});
+
+            listarBioimpedancias(usuario?.id || '')
+              .then((exames) => {
+                const ultimoExame = exames.length > 0 ? exames[0] : null;
+                return agendarNotificacoesBioimpedancia({
+                  ativo: dadosSalvos.notificacoes.bioimpedanciaLembreteAtivo ?? true,
+                  hora: dadosSalvos.notificacoes.bioimpedanciaHora || '08:00',
+                  intervaloDias: Number(dadosSalvos.notificacoes.bioimpedanciaIntervaloDias) || 15,
+                  dataUltimoExame: ultimoExame?.dataExame || null,
+                });
+              })
+              .catch(() => {});
           }
         }
       } catch (err) {
@@ -148,6 +171,23 @@ export const ConfiguracoesJejumScreen: React.FC<ConfiguracoesJejumScreenProps> =
       emJejum,
       dataInicio,
     }).catch(() => {});
+
+    // Se houve alteração nas configurações de peso, reagenda o alarme nativo e limpa trava do dia
+    if (
+      subcampos.pesoLembreteAtivo !== undefined ||
+      subcampos.pesoHora !== undefined ||
+      subcampos.pesoDias !== undefined
+    ) {
+      if (typeof window !== 'undefined') {
+        const hojeStr = new Date().toISOString().slice(0, 10);
+        localStorage.removeItem(`jejuar_alerta_peso_emitido_${hojeStr}`);
+      }
+      agendarNotificacoesPeso({
+        ativo: novasNotificacoes.pesoLembreteAtivo ?? true,
+        hora: novasNotificacoes.pesoHora || '08:00',
+        dias: novasNotificacoes.pesoDias || 'Todos os dias',
+      }).catch(() => {});
+    }
   };
 
   // Subtela de Notificações

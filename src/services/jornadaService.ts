@@ -30,6 +30,7 @@ import type {
 import type { SessaoJejum } from '../types';
 import { listarBioimpedancias } from './bioimpedanciaService';
 import { buscarHistoricoPesagensFirestore } from './firebase';
+import { notificarAtualizacaoGamificacao } from '../utils/perfilUtils';
 
 /** Catálogo oficial de humores/sentimentos disponíveis para registro rápido */
 export const LISTA_HUMORES_JORNADA: OpcaoHumorJornada[] = [
@@ -112,6 +113,7 @@ export async function salvarNovaAnotacaoJornada(
     }
   }
 
+  notificarAtualizacaoGamificacao();
   return novaAnotacao;
 }
 
@@ -155,6 +157,7 @@ export async function atualizarAnotacaoJornada(
       console.warn('[Jornada] Falha ao atualizar anotação no Firestore:', error);
     }
   }
+  notificarAtualizacaoGamificacao();
 }
 
 /**
@@ -184,6 +187,7 @@ export async function excluirAnotacaoJornada(
       console.warn('[Jornada] Falha ao excluir anotação no Firestore:', error);
     }
   }
+  notificarAtualizacaoGamificacao();
 }
 
 /**
@@ -258,39 +262,95 @@ function obterAnotacoesLocal(): AnotacaoJornada[] {
 }
 
 /**
- * Lista todas as sessões de jejuns realizadas pelo usuário.
+ * Lista todas as sessões de jejuns concluídas/registradas pelo usuário,
+ * unificando a subcoleção 'historico_jejuns' do Firestore com o cache local
+ * ('jejuar_historico_jejuns_cache') e sincronizando o total exato de horas jejuadas.
  */
 export async function listarSessoesJejuns(usuarioId?: string): Promise<SessaoJejum[]> {
-  if (!usuarioId) {
-    return [];
+  const mapaSessoes = new Map<string, SessaoJejum>();
+
+  // 1. Lê sessões salvas no cache local (caso o usuário tenha lançado/editado manualmente)
+  if (typeof window !== 'undefined') {
+    try {
+      const cache = localStorage.getItem('jejuar_historico_jejuns_cache');
+      if (cache) {
+        const parsed = JSON.parse(cache);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item && !['1', '2', '3', '4', '5', '6'].includes(String(item.id))) {
+              const chave = item.id || `${item.inicio}_${item.duracaoSegundos}`;
+              mapaSessoes.set(chave, {
+                id: item.id || chave,
+                planoId: item.planoId || '16:8',
+                nomePlano: item.nomePlano || '16:8',
+                inicio: item.inicio || new Date().toISOString(),
+                fim: item.fim || new Date().toISOString(),
+                duracaoSegundos: Number(item.duracaoSegundos || 0),
+                metaHoras: Number(item.metaHoras || 16),
+                metaAtingida: Boolean(item.metaAtingida),
+                aguaConsumidaMl: item.aguaConsumidaMl ? Number(item.aguaConsumidaMl) : undefined,
+              });
+            }
+          });
+        }
+      }
+    } catch {
+      // Ignora erro de parse do cache local
+    }
   }
 
-  try {
-    const colRef = collection(db, 'usuarios', usuarioId, 'historico_jejuns');
-    const q = query(colRef, orderBy('fim', 'desc'), limit(150));
-    const snap = await getDocs(q);
+  // 2. Busca sessões persistidas no Firestore na subcoleção 'historico_jejuns'
+  if (usuarioId) {
+    try {
+      const colRef = collection(db, 'usuarios', usuarioId, 'historico_jejuns');
+      const q = query(colRef, orderBy('fim', 'desc'), limit(1000));
+      const snap = await getDocs(q);
 
-    const sessoes: SessaoJejum[] = [];
-    snap.forEach(d => {
-      const data = d.data();
-      sessoes.push({
-        id: d.id,
-        planoId: data.planoId || '16:8',
-        nomePlano: data.nomePlano || '16:8',
-        inicio: data.inicio || new Date().toISOString(),
-        fim: data.fim || new Date().toISOString(),
-        duracaoSegundos: Number(data.duracaoSegundos || 0),
-        metaHoras: Number(data.metaHoras || 16),
-        metaAtingida: Boolean(data.metaAtingida),
-        aguaConsumidaMl: data.aguaConsumidaMl ? Number(data.aguaConsumidaMl) : undefined,
+      snap.forEach((d) => {
+        const data = d.data();
+        const sessaoRemota: SessaoJejum = {
+          id: d.id,
+          planoId: data.planoId || '16:8',
+          nomePlano: data.nomePlano || '16:8',
+          inicio: data.inicio || new Date().toISOString(),
+          fim: data.fim || new Date().toISOString(),
+          duracaoSegundos: Number(data.duracaoSegundos || 0),
+          metaHoras: Number(data.metaHoras || 16),
+          metaAtingida: Boolean(data.metaAtingida),
+          aguaConsumidaMl: data.aguaConsumidaMl ? Number(data.aguaConsumidaMl) : undefined,
+        };
+
+        // Evita duplicação caso o mesmo registro exista com ID temporário local pelo mesmo horário de início
+        for (const [k, v] of mapaSessoes.entries()) {
+          if (k !== d.id && v.inicio === sessaoRemota.inicio && Math.abs(v.duracaoSegundos - sessaoRemota.duracaoSegundos) < 60) {
+            mapaSessoes.delete(k);
+          }
+        }
+
+        mapaSessoes.set(d.id, sessaoRemota);
       });
-    });
-
-    return sessoes;
-  } catch (error) {
-    console.warn('[Jornada] Erro ao buscar sessões de jejuns no Firestore:', error);
-    return [];
+    } catch (error) {
+      console.warn('[Jornada] Erro ao buscar sessões de jejuns no Firestore:', error);
+    }
   }
+
+  const sessoesConsolidadas = Array.from(mapaSessoes.values()).sort(
+    (a, b) => new Date(b.fim || b.inicio).getTime() - new Date(a.fim || a.inicio).getTime()
+  );
+
+  // 3. Sincroniza o cache local e a soma exata das horas jejuadas concluídas
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('jejuar_historico_jejuns_cache', JSON.stringify(sessoesConsolidadas));
+      const totalSegundos = sessoesConsolidadas.reduce((acc, s) => acc + (Number(s.duracaoSegundos) || 0), 0);
+      const totalHorasExatas = Math.round(totalSegundos / 3600);
+      localStorage.setItem('jejuar_total_horas_jejum', String(totalHorasExatas));
+    } catch {
+      // Ignora erro de escrita local
+    }
+  }
+
+  return sessoesConsolidadas;
 }
 
 /**

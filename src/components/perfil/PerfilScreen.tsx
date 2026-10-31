@@ -9,11 +9,10 @@
  * - Grouped Inset List clássico com todas as ações de dados pessoais, hábitos, segurança e LGPD.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { UsuarioEmCadastro, DadosPerfilUsuario, ConquistaUsuario } from '../../types';
 import { buscarDadosPerfil, salvarDadosPerfil, exportarBackupDadosLGPD } from '../../services/perfilService';
-import { calcularMetricasGamificacao } from '../../utils/perfilUtils';
-import { calcularConquistasUsuario } from '../../utils/conquistasUtils';
+import { useGamificacaoUsuario } from '../../hooks/useGamificacaoUsuario';
 import { HeaderPerfilHero } from './HeaderPerfilHero';
 import { CardMetricasGamificadas } from './CardMetricasGamificadas';
 import { VitrineConquistasPerfil } from './VitrineConquistasPerfil';
@@ -34,6 +33,7 @@ interface PerfilScreenProps {
   onAbrirDadosCorporais: () => void;
   onAbrirRastreadorAgua: () => void;
   onAbrirNotificacoes: () => void;
+  onAtualizarBiometria?: (dados: { peso?: number; pesoDesejado?: number; pesoInicial?: number }) => void;
 }
 
 export const PerfilScreen: React.FC<PerfilScreenProps> = ({
@@ -42,19 +42,40 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({
   onAbrirDadosCorporais,
   onAbrirRastreadorAgua,
   onAbrirNotificacoes,
+  onAtualizarBiometria,
 }) => {
   // Controle de tela atual (Visão Geral vs Subtela de Edição)
   const [subtelaAtiva, setSubtelaAtiva] = useState<'geral' | 'editar'>('geral');
 
-  // Estado dos dados cadastrais do perfil
+  // Estado dos dados cadastrais e biométricos do perfil (incluindo dados do Onboarding)
   const [dadosPerfil, setDadosPerfil] = useState<DadosPerfilUsuario>(() => {
+    const info = usuario?.informacoesBasicas || {};
+    const generoSalvo = String(info.genero || 'feminino').toLowerCase() === 'masculino' ? 'masculino' : 'feminino';
+    const pesoAtualSalvo =
+      info.peso ||
+      (typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_atual') || 0) : 0) ||
+      68;
+    const pesoInicialSalvo =
+      info.pesoInicial ||
+      (typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_inicio') || 0) : 0) ||
+      pesoAtualSalvo;
+    const pesoDesejadoSalvo =
+      info.pesoDesejado ||
+      (typeof window !== 'undefined' ? Number(localStorage.getItem('jejuar_peso_meta') || 0) : 0) ||
+      Math.max(45, Math.round((pesoAtualSalvo - 5) * 10) / 10);
+
     return {
       nome: usuario?.nome || 'Usuário Jejuar',
       email: usuario?.email || 'usuario@jejuar.app',
       plano: usuario?.nivel === 'vitalicio' ? 'vitalicio' : (usuario?.nivel === 'pro' ? 'pro' : 'pro'),
-      genero: usuario?.informacoesBasicas?.genero || 'feminino',
-      altura: usuario?.informacoesBasicas?.altura || 165,
-      peso: usuario?.informacoesBasicas?.peso || 68,
+      genero: generoSalvo,
+      altura: info.altura || 165,
+      peso: pesoAtualSalvo,
+      pesoInicial: pesoInicialSalvo,
+      pesoDesejado: pesoDesejadoSalvo,
+      objetivoPrincipal: info.objetivoPrincipal || 'perder_peso',
+      experienciaJejum: info.experienciaJejum || 'primeira_vez',
+      anoNascimento: info.anoNascimento,
       avatarPredefinidoId: 'avatar_longevidade',
     };
   });
@@ -74,7 +95,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({
     mensagem: '',
   });
 
-  // Carrega os dados persistidos no Firestore / LocalStorage
+  // Carrega os dados persistidos do Perfil no Firestore / LocalStorage
   useEffect(() => {
     if (usuario?.id) {
       buscarDadosPerfil(usuario.id).then((perfilSalvo) => {
@@ -87,32 +108,13 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({
     }
   }, [usuario?.id]);
 
-  // Lista dinâmica de conquistas organizadas por Missões e Categoria
-  const conquistas = useMemo<ConquistaUsuario[]>(() => {
-    const streak = usuario?.estadoJejum?.diasConsecutivos || 1;
-    let aguaHoje = 0;
-    if (typeof window !== 'undefined') {
-      const hojeStr = new Date().toISOString().slice(0, 10);
-      aguaHoje = Number(localStorage.getItem(`jejuar_agua_${hojeStr}`) || '0');
-    }
-    const metaAgua = usuario?.configuracaoAgua?.metaDiariaMl || 2000;
+  // Hook unificado de Gamificação (Conquistas, Nível e XP sincronizados com todas as ações do app)
+  const { conquistas, metricasGamificadas } = useGamificacaoUsuario({
+    usuario,
+    dadosPerfilOverride: dadosPerfil,
+  });
 
-    return calcularConquistasUsuario({
-      diasConsecutivos: streak,
-      aguaConsumidaHoje: aguaHoje,
-      metaAguaHoje: metaAgua,
-      pesoAtualKg: usuario?.informacoesBasicas?.peso,
-      pesoInicialKg: usuario?.informacoesBasicas?.pesoInicial || usuario?.informacoesBasicas?.peso,
-      pesoDesejadoKg: usuario?.informacoesBasicas?.pesoDesejado,
-    });
-  }, [usuario]);
-
-  // Métricas gamificadas calculadas dinamicamente
-  const metricasGamificadas = useMemo(() => {
-    return calcularMetricasGamificacao(usuario, conquistas);
-  }, [usuario, conquistas]);
-
-  // Salva alterações completas do perfil
+  // Salva alterações completas do perfil e sincroniza com o estado pai (InicioScreen)
   const handleSalvarDadosPerfil = async (novosDados: Partial<DadosPerfilUsuario>) => {
     const usuarioId = usuario?.id || '';
     await salvarDadosPerfil(usuarioId, novosDados);
@@ -122,10 +124,18 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({
       ...novosDados,
     }));
 
+    if (onAtualizarBiometria) {
+      onAtualizarBiometria({
+        peso: novosDados.peso,
+        pesoDesejado: novosDados.pesoDesejado,
+        pesoInicial: novosDados.pesoInicial,
+      });
+    }
+
     setToastConfig({
       visivel: true,
       titulo: '✨ Perfil atualizado!',
-      mensagem: 'Suas informações cadastrais foram salvas com sucesso.',
+      mensagem: 'Suas informações cadastrais e metas foram salvas com sucesso.',
     });
   };
 

@@ -125,17 +125,20 @@ self.addEventListener('push', (evento) => {
     }
   }
 
+  const modoSilencioso = Boolean(dados.silent);
+
   const opcoes = {
     body: dados.body,
     icon: dados.icon || '/icon-192.png',
     badge: dados.badge || '/icon-192.png',
     tag: dados.tag || 'jejuar-notificacao',
-    renotify: true,
+    renotify: !modoSilencioso,
+    silent: modoSilencioso,
     requireInteraction: false,
-    vibrate: [250, 100, 250, 100, 250],
-    data: dados.data || { url: '/' },
+    vibrate: modoSilencioso ? [] : [250, 100, 250, 100, 250],
+    data: dados.data || { url: '/?tab=biometria', acao: 'biometria' },
     actions: dados.actions || [
-      { action: 'abrir', title: 'Abrir App' }
+      { action: 'abrir', title: 'Ver Biometria' }
     ]
   };
 
@@ -149,13 +152,18 @@ self.addEventListener('push', (evento) => {
  */
 self.addEventListener('notificationclick', (evento) => {
   evento.notification.close();
-  const urlDestino = evento.notification.data?.url || '/';
+  const urlDestino = evento.notification.data?.url || '/?tab=biometria';
+  const acaoDestino = evento.notification.data?.acao || evento.notification.data?.tipo || 'biometria';
 
   evento.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((listaClientes) => {
       for (const cliente of listaClientes) {
         if (cliente.url.includes(self.location.origin) && 'focus' in cliente) {
-          cliente.postMessage({ tipo: 'NOTIFICACAO_CLICADA', url: urlDestino });
+          cliente.postMessage({
+            tipo: 'NOTIFICACAO_CLICADA',
+            url: urlDestino,
+            acao: acaoDestino
+          });
           return cliente.focus();
         }
       }

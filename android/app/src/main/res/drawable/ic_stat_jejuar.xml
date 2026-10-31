@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ícone Oficial de Notificação do Aplicativo Jejuar (smallIcon)
+  Desenha o Anel Metabólico + Chama Oficial em silhueta branca (#FFFFFF) com fundo transparente,
+  seguindo o padrão Material Design do Android para exibição dentro do círculo #00C975.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Anel Circular Externo do Jejuar (espessura equilibrada para 24dp) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,1.5C6.2,1.5 1.5,6.2 1.5,12C1.5,17.8 6.2,22.5 12,22.5C17.8,22.5 22.5,17.8 22.5,12C22.5,6.2 17.8,1.5 12,1.5ZM12,3.6C16.64,3.6 20.4,7.36 20.4,12C20.4,16.64 16.64,20.4 12,20.4C7.36,20.4 3.6,16.64 3.6,12C3.6,7.36 7.36,3.6 12,3.6Z" />
+
+    <!-- Chama Central Estilizada do Jejuar com Recorte Interno -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12.3,5.2C12.3,5.2 13.9,7.3 13.7,9.4C13.6,10.1 13.2,10.7 13.2,10.7C13.2,10.7 14.5,10.0 15.1,8.7C16.3,10.1 16.8,11.9 16.5,13.6C16.1,16.0 14.2,17.8 12.0,17.8C9.8,17.8 7.9,16.0 7.5,13.6C7.2,11.8 8.0,9.8 9.2,8.6C9.1,9.6 9.6,10.4 10.2,10.8C9.9,8.5 11.0,6.4 12.3,5.2ZM12.0,11.8C11.2,12.7 10.6,13.6 10.7,14.6C10.8,15.6 11.4,16.3 12.0,16.5C12.6,16.3 13.2,15.6 13.3,14.6C13.4,13.6 12.8,12.7 12.0,11.8Z" />
+</vector>

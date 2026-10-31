@@ -178,16 +178,15 @@ export const DadosCorporaisScreen: React.FC<DadosCorporaisScreenProps> = ({
       localStorage.setItem('jejuar_medidas_corporais', JSON.stringify(novasMedidas));
     } catch {}
 
-    // Salva no Firestore
-    if (usuario?.id) {
-      try {
-        await salvarMedidaCorporalFirestore(usuario.id, parte, novoValorCm);
-        // Atualiza a lista de histórico
+    // Salva no Firestore e notifica gamificação (suporta modo local caso usuario?.id esteja vazio)
+    try {
+      await salvarMedidaCorporalFirestore(usuario?.id || '', parte, novoValorCm);
+      if (usuario?.id) {
         const novoHistorico = await buscarHistoricoMedidasParteFirestore(usuario.id, parte);
         setHistoricoMedidasParte(novoHistorico);
-      } catch (error) {
-        console.error("Erro ao salvar medida no Firestore:", error);
       }
+    } catch (error) {
+      console.error("Erro ao salvar medida no Firestore:", error);
     }
   };
 
@@ -211,17 +210,15 @@ export const DadosCorporaisScreen: React.FC<DadosCorporaisScreenProps> = ({
         localStorage.setItem('jejuar_peso_atual', novoValor.toString());
       } catch {}
 
-      // Grava no Firestore na subcoleção de pesagens com foto Base64 e atualiza documento
-      if (usuario?.id) {
-        try {
-          await registrarPesagemHistoricoFirestore(usuario.id, novoValor, fotoBase64 || undefined);
-          setHistoricoPesagens((prev) => [
-            ...prev,
-            { peso: novoValor, dataIso: new Date().toISOString(), fotoUrl: fotoBase64 || null }
-          ]);
-        } catch (e) {
-          console.warn("Erro ao salvar pesagem no Firestore:", e);
-        }
+      // Grava na subcoleção de pesagens, atualiza contadores de gamificação e estado local
+      try {
+        await registrarPesagemHistoricoFirestore(usuario?.id || '', novoValor, fotoBase64 || undefined);
+        setHistoricoPesagens((prev) => [
+          ...prev,
+          { peso: novoValor, dataIso: new Date().toISOString(), fotoUrl: fotoBase64 || null }
+        ]);
+      } catch (e) {
+        console.warn("Erro ao salvar pesagem no Firestore:", e);
       }
     } else if (modo === 'inicio') {
       setPesoInicial(novoValor);
@@ -229,12 +226,10 @@ export const DadosCorporaisScreen: React.FC<DadosCorporaisScreenProps> = ({
         localStorage.setItem('jejuar_peso_inicio', novoValor.toString());
       } catch {}
 
-      if (usuario?.id) {
-        try {
-          await atualizarPesoInicialFirestore(usuario.id, novoValor);
-        } catch (e) {
-          console.warn("Erro ao salvar peso inicial no Firestore:", e);
-        }
+      try {
+        await atualizarPesoInicialFirestore(usuario?.id || '', novoValor);
+      } catch (e) {
+        console.warn("Erro ao salvar peso inicial no Firestore:", e);
       }
     } else if (modo === 'meta') {
       setPesoMeta(novoValor);
@@ -242,12 +237,10 @@ export const DadosCorporaisScreen: React.FC<DadosCorporaisScreenProps> = ({
         localStorage.setItem('jejuar_peso_meta', novoValor.toString());
       } catch {}
 
-      if (usuario?.id) {
-        try {
-          await atualizarMetaPesoFirestore(usuario.id, novoValor);
-        } catch (e) {
-          console.warn("Erro ao salvar meta de peso no Firestore:", e);
-        }
+      try {
+        await atualizarMetaPesoFirestore(usuario?.id || '', novoValor);
+      } catch (e) {
+        console.warn("Erro ao salvar meta de peso no Firestore:", e);
       }
     }
   };

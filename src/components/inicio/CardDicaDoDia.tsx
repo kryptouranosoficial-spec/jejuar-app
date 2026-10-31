@@ -244,37 +244,68 @@ export const CardDicaDoDia: React.FC<CardDicaDoDiaProps> = ({
 
   // Cálculos de Biometria Revelada (Recompensa da Caça baseada nas horas reais e peso do usuário)
   const biometria = useMemo(() => {
-    const fatorPeso = (pesoAtual || 72.4) / 70;
+    const pesoValido = pesoAtual && pesoAtual > 30 ? pesoAtual : 72.4;
+    const fatorPeso = pesoValido / 70;
     
-    // Taxa de lipólise crescente conforme a insulina cai:
+    // Taxa de lipólise crescente conforme a insulina cai e a cetose aprofunda:
     let taxaGorduraHora = 1.2;
-    if (horasDecorridas >= 16) taxaGorduraHora = 3.2;
+    if (horasDecorridas >= 36) taxaGorduraHora = 3.6;
+    else if (horasDecorridas >= 24) taxaGorduraHora = 3.4;
+    else if (horasDecorridas >= 16) taxaGorduraHora = 3.2;
     else if (horasDecorridas >= 12) taxaGorduraHora = 2.8;
     else if (horasDecorridas >= 8) taxaGorduraHora = 2.2;
     else if (horasDecorridas >= 4) taxaGorduraHora = 1.6;
 
-    const gorduraGramas = Math.max(6, Math.round(horasDecorridas * taxaGorduraHora * fatorPeso));
+    const gorduraGramas = Math.max(4, Math.round(horasDecorridas * taxaGorduraHora * fatorPeso));
     const caloriasLipidicas = Math.round(gorduraGramas * 9);
 
-    // Marco atual desbloqueado
-    let marcoNome = 'Transição Metabólica';
-    let proximoMarcoTexto = 'Próximo marco às 4h (Insulina baixa)';
+    // Marco atual desbloqueado e projeção do próximo marco fisiológico (4h até 168h)
+    let marcoNome = 'Transição Metabólica & Digestão';
+    let proximoMarcoTexto = `Faltam ${Math.max(0, 4 - horasDecorridas).toFixed(1)}h para Queda da Insulina (4h)`;
     let porcentagemAteProximo = Math.min(100, Math.round((horasDecorridas / 4) * 100));
 
-    if (horasDecorridas >= 16) {
-      marcoNome = 'Autofagia e Renovação Mitocondrial';
-      proximoMarcoTexto = 'Nível Máximo de Limpeza Celular Ativo';
+    if (horasDecorridas >= 168) {
+      marcoNome = 'Reprogramação Epigenética (7 Dias)';
+      proximoMarcoTexto = 'Marco Lendário de 168h Atingido!';
       porcentagemAteProximo = 100;
-    } else if (horasDecorridas >= 12) {
-      marcoNome = 'Cetose e Queima Lipídica Profunda';
+    } else if (horasDecorridas >= 72) {
+      marcoNome = 'Reinicialização Imunológica Plena (72h+)';
+      proximoMarcoTexto = `Faltam ${(168 - horasDecorridas).toFixed(1)}h para o Marco de 168h`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 72) / (168 - 72)) * 100));
+    } else if (horasDecorridas >= 48) {
+      marcoNome = 'Biogênese Mitocondrial & Renovação Imune';
+      proximoMarcoTexto = `Faltam ${(72 - horasDecorridas).toFixed(1)}h para Pico de Células-Tronco (72h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 48) / 24) * 100));
+    } else if (horasDecorridas >= 36) {
+      marcoNome = 'Cetose Máxima (100% Lipólise Visceral)';
+      proximoMarcoTexto = `Faltam ${(48 - horasDecorridas).toFixed(1)}h para Renovação Imune (48h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 36) / 12) * 100));
+    } else if (horasDecorridas >= 24) {
+      marcoNome = 'Autofagia Profunda & Células-Tronco';
+      proximoMarcoTexto = `Faltam ${(36 - horasDecorridas).toFixed(1)}h para Cetose Máxima (36h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 24) / 12) * 100));
+    } else if (horasDecorridas >= 18) {
+      marcoNome = 'Pico de HGH & Autofagia Acelerada';
+      proximoMarcoTexto = `Faltam ${(24 - horasDecorridas).toFixed(1)}h para Células-Tronco (24h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 18) / 6) * 100));
+    } else if (horasDecorridas >= 16) {
+      marcoNome = 'Autofagia e Renovação Mitocondrial';
+      proximoMarcoTexto = `Faltam ${(18 - horasDecorridas).toFixed(1)}h para Pico de HGH (18h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 16) / 2) * 100));
+    } else if (horasDecorridas >= 14) {
+      marcoNome = 'Queima Lipídica Profunda (14h+)';
       proximoMarcoTexto = `Faltam ${(16 - horasDecorridas).toFixed(1)}h para Autofagia Plena (16h)`;
-      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 12) / 4) * 100));
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 14) / 2) * 100));
+    } else if (horasDecorridas >= 12) {
+      marcoNome = 'Cetose Nutricional & Foco Mental';
+      proximoMarcoTexto = `Faltam ${(14 - horasDecorridas).toFixed(1)}h para Queima Profunda (14h)`;
+      porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 12) / 2) * 100));
     } else if (horasDecorridas >= 8) {
       marcoNome = 'Lipólise Acelerada dos Adipócitos';
       proximoMarcoTexto = `Faltam ${(12 - horasDecorridas).toFixed(1)}h para Cetose Plena (12h)`;
       porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 8) / 4) * 100));
     } else if (horasDecorridas >= 4) {
-      marcoNome = 'Esvaziamento do Glicogênio Hepático';
+      marcoNome = 'Queda da Insulina & Uso do Glicogênio';
       proximoMarcoTexto = `Faltam ${(8 - horasDecorridas).toFixed(1)}h para Queima de Gordura (8h)`;
       porcentagemAteProximo = Math.min(100, Math.round(((horasDecorridas - 4) / 4) * 100));
     }

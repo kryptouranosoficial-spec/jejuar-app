@@ -66,6 +66,17 @@ export interface EstadoJejumUsuario {
   diasConsecutivos: number;
   /** Data no formato YYYY-MM-DD da última sessão concluída com sucesso */
   ultimoDiaConcluido?: string | null;
+  /** Lista de horas dos marcos biométricos já disparados na sessão atual (ex: [4, 8, 12]) */
+  marcosBiometricosEnviados?: number[];
+  /** Timestamp ISO da sessão correspondente aos marcos enviados */
+  sessaoMarcosTimestamp?: string | null;
+  /** Flags de controle de envio de alertas do processo de jejum */
+  alertaConclusaoEnviado?: boolean;
+  alertaMetadeEnviado?: boolean;
+  alerta3hEnviado?: boolean;
+  alerta2hFimEnviado?: boolean;
+  alerta1hFimEnviado?: boolean;
+  alertaFimPerdidoEnviado?: boolean;
   /** Data de atualização */
   atualizadoEm?: unknown;
 }
@@ -216,6 +227,10 @@ export interface ConfiguracoesNotificacoes {
   pesoHora: string;
   pesoDias: string;
   pesoSom: string;
+  bioimpedanciaLembreteAtivo?: boolean;
+  bioimpedanciaHora?: string;
+  bioimpedanciaIntervaloDias?: number;
+  bioimpedanciaSom?: string;
   naoPerturbeAtivo: boolean;
   naoPerturbeHoraInicio: string;
   naoPerturbeHoraFim: string;

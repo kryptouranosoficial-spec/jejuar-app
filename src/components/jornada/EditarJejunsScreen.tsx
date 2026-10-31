@@ -12,6 +12,8 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Trash2, Plus, Edit3, Clock, Check, X, AlertCircle } from 'lucide-react';
 import type { SessaoJejum, UsuarioEmCadastro } from '../../types';
 import { ModalConfirmacao } from '../ModalConfirmacao';
+import { salvarSessaoJejumManualFirestore, excluirSessaoJejumFirestore } from '../../services/firebase';
+import { listarSessoesJejuns } from '../../services/jornadaService';
 
 interface EditarJejunsScreenProps {
   usuario?: UsuarioEmCadastro;
@@ -46,10 +48,23 @@ export const EditarJejunsScreen: React.FC<EditarJejunsScreenProps> = ({
     return [];
   });
 
-  // Salva no cache local quando houver alterações
+  // Garante hidratação completa a partir do Firestore ao abrir a tela
+  useEffect(() => {
+    if (usuario?.id) {
+      listarSessoesJejuns(usuario.id).then((sessoes) => {
+        if (sessoes.length > 0) {
+          setListaJejuns(sessoes);
+        }
+      }).catch(() => {});
+    }
+  }, [usuario?.id]);
+
+  // Salva no cache local e atualiza a soma exata de horas quando houver alterações
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('jejuar_historico_jejuns_cache', JSON.stringify(listaJejuns));
+      const totalSegundos = listaJejuns.reduce((acc, s) => acc + (Number(s.duracaoSegundos) || 0), 0);
+      localStorage.setItem('jejuar_total_horas_jejum', String(Math.round(totalSegundos / 3600)));
     }
   }, [listaJejuns]);
 
@@ -117,40 +132,48 @@ export const EditarJejunsScreen: React.FC<EditarJejunsScreenProps> = ({
     setModalFormAberto(true);
   };
 
-  // Salva inclusão ou edição
-  const handleSalvarFormulario = (e: React.FormEvent) => {
+  // Salva inclusão ou edição tanto no estado/cache local quanto no Firestore
+  const handleSalvarFormulario = async (e: React.FormEvent) => {
     e.preventDefault();
     const horasNum = parseFloat(horasJejumInput) || 16;
     const duracaoSegundos = Math.round(horasNum * 3600);
 
     const dataHoraIso = `${dataInput}T${horaInicioInput}:00Z`;
+    const fimIso = new Date(new Date(dataHoraIso).getTime() + duracaoSegundos * 1000).toISOString();
 
     if (jejumEmEdicao) {
-      // Edita registro existente
-      setListaJejuns(prev => prev.map(item => {
-        if (item.id === jejumEmEdicao.id) {
-          return {
-            ...item,
-            inicio: dataHoraIso,
-            duracaoSegundos,
-            metaHoras: horasNum,
-          };
-        }
-        return item;
-      }));
+      const itemAtualizado: SessaoJejum = {
+        ...jejumEmEdicao,
+        inicio: dataHoraIso,
+        fim: fimIso,
+        duracaoSegundos,
+        metaHoras: horasNum,
+      };
+      setListaJejuns(prev => prev.map(item => (item.id === jejumEmEdicao.id ? itemAtualizado : item)));
+      if (usuario?.id) {
+        salvarSessaoJejumManualFirestore(usuario.id, itemAtualizado).catch(() => {});
+      }
     } else {
-      // Cria novo registro
+      const idTemp = `jejum_${Date.now()}`;
       const novoItem: SessaoJejum = {
-        id: `jejum_${Date.now()}`,
+        id: idTemp,
         planoId: `${horasNum}:8`,
         nomePlano: `${horasNum}h`,
         inicio: dataHoraIso,
-        fim: new Date(new Date(dataHoraIso).getTime() + duracaoSegundos * 1000).toISOString(),
+        fim: fimIso,
         duracaoSegundos,
         metaHoras: horasNum,
         metaAtingida: true,
       };
       setListaJejuns(prev => [novoItem, ...prev]);
+
+      if (usuario?.id) {
+        salvarSessaoJejumManualFirestore(usuario.id, novoItem).then((idRemoto) => {
+          if (idRemoto && idRemoto !== idTemp) {
+            setListaJejuns(prev => prev.map(item => (item.id === idTemp ? { ...item, id: idRemoto } : item)));
+          }
+        }).catch(() => {});
+      }
     }
 
     setModalFormAberto(false);
@@ -160,8 +183,12 @@ export const EditarJejunsScreen: React.FC<EditarJejunsScreenProps> = ({
   // Confirma a exclusão de um registro
   const handleConfirmarExclusao = () => {
     if (!itemParaExcluir) return;
-    setListaJejuns(prev => prev.filter(item => item.id !== itemParaExcluir.id));
+    const idRemovido = itemParaExcluir.id;
+    setListaJejuns(prev => prev.filter(item => item.id !== idRemovido));
     setItemParaExcluir(null);
+    if (usuario?.id && idRemovido) {
+      excluirSessaoJejumFirestore(usuario.id, idRemovido).catch(() => {});
+    }
     if (onAtualizarHistorico) onAtualizarHistorico();
   };
 

@@ -10,6 +10,7 @@
 import React, { useState } from 'react';
 import { X, Share2, Check, Lock, Sparkles, Award, Droplets, Flame, Star, Trophy, Shield, Activity, Scale, HeartPulse } from 'lucide-react';
 import type { ConquistaUsuario } from '../../types';
+import { notificarAtualizacaoGamificacao } from '../../utils/perfilUtils';
 
 interface ModalDetalheConquistaProps {
   conquista: ConquistaUsuario | null;
@@ -29,8 +30,15 @@ export const ModalDetalheConquista: React.FC<ModalDetalheConquistaProps> = ({
     Math.round((conquista.progressoAtual / conquista.progressoTotal) * 100)
   );
 
-  // Ação de Compartilhamento Nativo com Fallback para Cópia
+  // Ação de Compartilhamento Nativo com Fallback para Cópia e Desbloqueio da Conquista Social
   const handleCompartilhar = async () => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('jejuar_conquista_compartilhada', 'true');
+        notificarAtualizacaoGamificacao();
+      } catch {}
+    }
+
     const textoCompartilhamento = `🏆 Alcancei a conquista "${conquista.titulo}" no app Jejuar!\n"${conquista.descricao}"\n\nJunte-se a mim na jornada de saúde e longevidade! 🚀`;
 
     if (navigator.share) {

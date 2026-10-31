@@ -18,6 +18,7 @@ import {
   getDocs, 
   getDoc,
   doc, 
+  setDoc,
   updateDoc, 
   deleteDoc,
   addDoc,
@@ -30,6 +31,7 @@ import {
   initializeFirestore,
   setLogLevel
 } from 'firebase/firestore';
+import { gerarMarcosBiometricosJejum } from './src/utils/biometriaMarcosUtils';
 
 // Suprime avisos de desconexão e reconexão de canais ociosos do Firestore
 setLogLevel('error');
@@ -102,10 +104,47 @@ interface NotificacaoPayload {
   icon?: string;
   badge?: string;
   tag?: string;
+  /** Se true, entrega na barra do celular sem som e sem vibração (modo Não Perturbe Noturno) */
+  silent?: boolean;
   data?: {
     url: string;
     tipo?: string;
+    acao?: string;
   };
+}
+
+/**
+ * Espelha de forma idempotente um Insight Biométrico disparado pelo servidor
+ * também na subcoleção `notificacoes_internas` do usuário no Firestore.
+ */
+async function registrarInsightInternoNoServidor(
+  usuarioId: string,
+  notificacaoId: string,
+  titulo: string,
+  mensagem: string
+): Promise<void> {
+  try {
+    const docRef = doc(db, 'usuarios', usuarioId, 'notificacoes_internas', notificacaoId);
+    await setDoc(
+      docRef,
+      {
+        id: notificacaoId,
+        titulo,
+        mensagem,
+        categoria: 'conquista',
+        dataIso: new Date().toISOString(),
+        lida: false,
+        acaoLink: 'biometria',
+        acaoTexto: 'Ver Biometria',
+        remetente: 'Insight Biométrico',
+        icone: 'flame',
+        criadoEm: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn(`[Push Server] Aviso ao espelhar insight interno para ${usuarioId}:`, err);
+  }
 }
 
 /**
@@ -168,7 +207,8 @@ async function enviarNotificacaoParaUsuario(
       icon: payload.icon || '/icon-192.png',
       badge: payload.badge || '/icon-192.png',
       tag: payload.tag || 'jejuar-notificacao',
-      data: payload.data || { url: '/' }
+      silent: Boolean(payload.silent),
+      data: payload.data || { url: '/?tab=biometria', acao: 'biometria' }
     });
 
     const opcoesPush = {
@@ -199,7 +239,7 @@ async function enviarNotificacaoParaUsuario(
           usuarioId,
           payload.tag || 'geral',
           'sucesso',
-          `Notificação "${payload.title}" entregue com sucesso ao FCM.`,
+          `Notificação "${payload.title}" entregue com sucesso ao FCM (${payload.silent ? 'Modo Silencioso Noturno' : 'Modo Normal com Vibração'}).`,
           201
         );
       } catch (pushErr: any) {
@@ -266,9 +306,13 @@ function estaNoPeriodoNaoPerturbe(horaAtualStr: string, inicio = '23:00', fim = 
 
 /**
  * ----------------------------------------------------------------------------
- * 1. MÓDULO DE AVALIAÇÃO: JEJUM INTERMITENTE
+ * 1. MÓDULO DE AVALIAÇÃO: JEJUM INTERMITENTE & INSIGHTS BIOMÉTRICOS EXTERNOS
  * ----------------------------------------------------------------------------
- * Avalia início programado, marcos de autofagia/queima e término da meta com tolerância temporal.
+ * Avalia início programado e dispara todas as notificações externas de Insights Biométricos
+ * (4h, 8h, 12h, 14h, 16h, 18h, 24h, 36h, 48h, 72h, 168h + meta do plano) diretamente na
+ * tela de bloqueio/barra do celular com o aplicativo fechado.
+ * No horário de Não Perturbe, entrega silenciosamente na barra do celular (silent: true)
+ * para o usuário visualizar assim que acordar.
  */
 async function avaliarNotificacoesJejum(
   usuario: any,
@@ -360,19 +404,20 @@ async function avaliarNotificacoesJejum(
             'estadoJejum.alerta2hFimEnviado': false,
             'estadoJejum.alerta1hFimEnviado': false,
             'estadoJejum.alertaFimPerdidoEnviado': false,
+            'estadoJejum.marcosBiometricosEnviados': [],
+            'estadoJejum.sessaoMarcosTimestamp': agoraIso,
             ultimoAlertaJejumSlot: slotInicio,
             atualizadoEm: serverTimestamp()
           }).catch(() => {});
 
-          if (!emSilencioNoturno) {
-            const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-              title: 'Seu jejum começou automaticamente! 🔥',
-              body: `Protocolo ${nomePlano} (${metaHorasPlano}h) ativado pontualmente às ${horaInicioDiaria}. Bom jejum!`,
-              tag: 'jejum-inicio-auto',
-              data: { url: '/?tab=jejum', tipo: 'inicio_jejum' }
-            });
-            if (enviou > 0) enviadas += enviou;
-          }
+          const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
+            title: 'Seu jejum começou automaticamente! 🔥',
+            body: `Protocolo ${nomePlano} (${metaHorasPlano}h) ativado pontualmente às ${horaInicioDiaria}. Bom jejum!`,
+            tag: 'jejum-inicio-auto',
+            silent: emSilencioNoturno,
+            data: { url: '/?tab=jejum', tipo: 'inicio_jejum' }
+          });
+          if (enviou > 0) enviadas += enviou;
         } else if (notifsJejum?.jejumInicioAtivo !== false && !emSilencioNoturno) {
           const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
             title: 'Hora de Iniciar seu Jejum! ⏳',
@@ -395,18 +440,31 @@ async function avaliarNotificacoesJejum(
   // Cenário B: Usuário ESTÁ em jejum ativo
   else if (estadoJejum.emJejum && estadoJejum.inicioTimestamp) {
     const inicioMs = new Date(estadoJejum.inicioTimestamp).getTime();
+    if (isNaN(inicioMs)) return 0;
+
     const metaHoras = Number(estadoJejum.metaHoras || 16);
+    const nomePlano = estadoJejum.nomePlano || `${metaHoras}h`;
+    const pesoUsuario = Number(usuario.informacoesBasicas?.peso || 72.4);
     const metaMs = metaHoras * 3600 * 1000;
     const decorridoMs = agoraMs - inicioMs;
+    const horasDecorridas = decorridoMs / (3600 * 1000);
 
-    // B1. 3h após o início do jejum
-    if (decorridoMs >= 3 * 3600 * 1000 && !estadoJejum.alerta3hEnviado && decorridoMs < metaMs) {
-      if (!emSilencioNoturno && notifsJejum?.jejum3hAposInicio) {
+    // Garante que a lista de marcos enviados pertence estritamente à sessão atual (inicioTimestamp)
+    const sessaoSalva = estadoJejum.sessaoMarcosTimestamp;
+    let marcosEnviados: number[] =
+      sessaoSalva === estadoJejum.inicioTimestamp && Array.isArray(estadoJejum.marcosBiometricosEnviados)
+        ? [...estadoJejum.marcosBiometricosEnviados]
+        : [];
+
+    // B1. 3h após o início do jejum (se ativado nas preferências do processo de jejum)
+    if (decorridoMs >= 3 * 3600 * 1000 && !estadoJejum.alerta3hEnviado && horasDecorridas < 4) {
+      if (notifsJejum?.jejum3hAposInicio) {
         const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-          title: '3h de Jejum Concluídas ✨',
-          body: 'Sua digestão foi finalizada e seu corpo começa a queimar as reservas de glicogênio!',
+          title: '🌱 3h de Jejum Concluídas!',
+          body: 'Sua digestão está finalizando e a glicose estabilizou. O marco de 4h está próximo!',
           tag: 'jejum-3h',
-          data: { url: '/?tab=jejum', tipo: 'progresso_jejum' }
+          silent: emSilencioNoturno,
+          data: { url: '/?tab=biometria', tipo: 'progresso_jejum', acao: 'biometria' }
         });
         if (enviou > 0) enviadas += enviou;
       }
@@ -416,54 +474,78 @@ async function avaliarNotificacoesJejum(
       }).catch(() => {});
     }
 
-    // B2. Marco de 50% do Jejum
-    if (decorridoMs >= (metaMs / 2) && !estadoJejum.alertaMetadeEnviado && decorridoMs < metaMs) {
-      if (!emSilencioNoturno) {
-        const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-          title: 'Metade do Jejum Atingida! ⚡',
-          body: `Você já completou metade da sua meta de ${metaHoras}h. Seu corpo está acelerando a queima de gordura!`,
-          tag: 'jejum-metade',
-          data: { url: '/?tab=jejum', tipo: 'metade_jejum' }
-        });
-        if (enviou > 0) enviadas += enviou;
+    // B2. MOTOR DE INSIGHTS BIOMÉTRICOS EXTERNOS (4h, 8h, 12h, 14h, 16h, 18h, 24h, 36h, 48h, 72h, 168h + Meta)
+    const marcosCatalogo = gerarMarcosBiometricosJejum(metaHoras, nomePlano, pesoUsuario);
+    const marcosAtingidosNaoEnviados = marcosCatalogo.filter(
+      (m) => horasDecorridas >= m.horas && !marcosEnviados.includes(m.horas)
+    );
+
+    if (marcosAtingidosNaoEnviados.length > 0) {
+      // Seleciona o marco mais recente atingido para disparar o alerta externo no celular (evitando flood em inícios retroativos)
+      const marcoParaDisparar = marcosAtingidosNaoEnviados[marcosAtingidosNaoEnviados.length - 1];
+
+      // Registra todos os marcos atingidos na Central de Notificações Internas para histórico completo
+      for (const m of marcosAtingidosNaoEnviados) {
+        const idNotifInterna = `biometria_${String(estadoJejum.inicioTimestamp).slice(0, 10)}_${m.horas}h`;
+        await registrarInsightInternoNoServidor(usuarioId, idNotifInterna, m.titulo, m.mensagem);
+        if (!marcosEnviados.includes(m.horas)) {
+          marcosEnviados.push(m.horas);
+        }
       }
-      await updateDoc(userDocRef, {
-        'estadoJejum.alertaMetadeEnviado': true,
+
+      // Dispara a notificação externa no celular (Silenciosa na barra se estiver no Não Perturbe Noturno; Normal com vibração fora dele)
+      const enviouPush = await enviarNotificacaoParaUsuario(usuarioId, {
+        title: marcoParaDisparar.titulo,
+        body: marcoParaDisparar.mensagem,
+        tag: `jejum-biometria-${marcoParaDisparar.horas}h`,
+        silent: emSilencioNoturno,
+        data: {
+          url: '/?tab=biometria',
+          tipo: 'marco_biometrico',
+          acao: 'biometria'
+        }
+      });
+
+      if (enviouPush > 0) {
+        enviadas += enviouPush;
+      }
+
+      const camposUpdate: Record<string, any> = {
+        'estadoJejum.marcosBiometricosEnviados': marcosEnviados,
+        'estadoJejum.sessaoMarcosTimestamp': estadoJejum.inicioTimestamp,
         atualizadoEm: serverTimestamp()
-      }).catch(() => {});
+      };
+
+      if (marcoParaDisparar.ehConclusaoMeta || horasDecorridas >= metaHoras) {
+        camposUpdate['estadoJejum.alertaConclusaoEnviado'] = true;
+        camposUpdate['estadoJejum.notificadoEm'] = serverTimestamp();
+      }
+
+      await updateDoc(userDocRef, camposUpdate).catch(() => {});
     }
 
-    // B3. 2h antes do término do jejum
-    if (decorridoMs >= (metaMs - 2 * 3600 * 1000) && !estadoJejum.alerta2hFimEnviado && decorridoMs < metaMs) {
-      if (!emSilencioNoturno && notifsJejum?.jejum2hAntesFim) {
+    // B3. 2h antes do término do jejum (apenas se não coincidir exatamente com um marco biométrico recém-disparado)
+    const hora2hAntesFim = metaHoras - 2;
+    const coincideComMarco = marcosCatalogo.some((m) => m.horas === hora2hAntesFim);
+    if (
+      hora2hAntesFim > 0 &&
+      !coincideComMarco &&
+      decorridoMs >= hora2hAntesFim * 3600 * 1000 &&
+      !estadoJejum.alerta2hFimEnviado &&
+      decorridoMs < metaMs
+    ) {
+      if (notifsJejum?.jejum2hAntesFim) {
         const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
           title: 'Faltam apenas 2h para sua Meta! 🏁',
           body: 'Reta final do seu jejum. Mantenha o foco e continue se hidratando!',
           tag: 'jejum-2h-fim',
+          silent: emSilencioNoturno,
           data: { url: '/?tab=jejum', tipo: 'progresso_jejum' }
         });
         if (enviou > 0) enviadas += enviou;
       }
       await updateDoc(userDocRef, {
         'estadoJejum.alerta2hFimEnviado': true,
-        atualizadoEm: serverTimestamp()
-      }).catch(() => {});
-    }
-
-    // B4. Meta de Jejum Concluída
-    if (decorridoMs >= metaMs && !estadoJejum.alertaConclusaoEnviado) {
-      if (!emSilencioNoturno && notifsJejum?.jejumFimAtivo !== false) {
-        const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-          title: 'Parabéns! Meta de Jejum Concluída 🔥',
-          body: `Você completou suas ${metaHoras} horas com sucesso! Abra para registrar sua refeição.`,
-          tag: 'jejum-conclusao',
-          data: { url: '/?tab=jejum', tipo: 'conclusao_jejum' }
-        });
-        if (enviou > 0) enviadas += enviou;
-      }
-      await updateDoc(userDocRef, {
-        'estadoJejum.alertaConclusaoEnviado': true,
-        'estadoJejum.notificadoEm': serverTimestamp(),
         atualizadoEm: serverTimestamp()
       }).catch(() => {});
     }
@@ -573,64 +655,112 @@ async function avaliarNotificacoesPeso(
   fusoUsuario: string
 ): Promise<number> {
   let enviadas = 0;
-  if (emSilencioNoturno) return 0;
 
   const notifs = usuario.configuracoesJejum?.notificacoes || {};
-  const lembretePesoAtivo = notifs.pesoLembreteAtivo ?? true;
+  const configPesoLegado = usuario.configuracoesPeso || {};
+
+  const lembretePesoAtivo =
+    notifs.pesoLembreteAtivo !== undefined
+      ? Boolean(notifs.pesoLembreteAtivo)
+      : configPesoLegado.ativo !== undefined
+      ? Boolean(configPesoLegado.ativo)
+      : true;
+
   if (!lembretePesoAtivo) return 0;
 
-  const pesoHora = notifs.pesoHora || '08:00';
-  const pesoDias = notifs.pesoDias || 'Todos os dias';
+  const pesoHora = notifs.pesoHora || configPesoLegado.hora || '08:00';
+  const pesoDiasBruto =
+    notifs.pesoDias ||
+    (Array.isArray(configPesoLegado.dias) ? configPesoLegado.dias.join(', ') : 'Todos os dias');
+
+  // Remove acentos para comparação confiável (ex: "Sábado" === "sabado")
+  const normalizar = (str: string) =>
+    String(str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
 
   // Identifica o dia da semana atual no fuso horário do usuário
   let diaSemanaAtual = '';
   try {
-    diaSemanaAtual = agora.toLocaleDateString('pt-BR', { timeZone: fusoUsuario, weekday: 'long' }).toLowerCase();
+    diaSemanaAtual = normalizar(
+      agora.toLocaleDateString('pt-BR', { timeZone: fusoUsuario, weekday: 'long' })
+    );
   } catch {
-    diaSemanaAtual = agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' }).toLowerCase();
+    diaSemanaAtual = normalizar(
+      agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' })
+    );
   }
 
-  // Verifica se o dia atual coincide com a preferência do usuário
-  const pesoDiasNormalizado = pesoDias.toLowerCase();
-  const diaValido = 
-    pesoDiasNormalizado.includes('todos') || 
+  const pesoDiasNormalizado = normalizar(pesoDiasBruto);
+  const diaValido =
+    !pesoDiasNormalizado ||
+    pesoDiasNormalizado.includes('todos') ||
     pesoDiasNormalizado.includes(diaSemanaAtual) ||
     (diaSemanaAtual.startsWith('segunda') && pesoDiasNormalizado.includes('segunda')) ||
-    (diaSemanaAtual.startsWith('terça') && pesoDiasNormalizado.includes('terça')) ||
+    (diaSemanaAtual.startsWith('terca') && pesoDiasNormalizado.includes('terca')) ||
     (diaSemanaAtual.startsWith('quarta') && pesoDiasNormalizado.includes('quarta')) ||
     (diaSemanaAtual.startsWith('quinta') && pesoDiasNormalizado.includes('quinta')) ||
     (diaSemanaAtual.startsWith('sexta') && pesoDiasNormalizado.includes('sexta')) ||
-    (diaSemanaAtual.startsWith('sábado') && pesoDiasNormalizado.includes('sábado')) ||
-    (diaSemanaAtual.startsWith('domingo') && pesoDiasNormalizado.includes('domingo'));
+    (diaSemanaAtual.startsWith('sabado') && (pesoDiasNormalizado.includes('sabado') || pesoDiasNormalizado.includes('fim de semana') || pesoDiasNormalizado.includes('fins de semana'))) ||
+    (diaSemanaAtual.startsWith('domingo') && (pesoDiasNormalizado.includes('domingo') || pesoDiasNormalizado.includes('fim de semana') || pesoDiasNormalizado.includes('fins de semana')));
 
   if (!diaValido) return 0;
 
   const [hPeso, mPeso] = pesoHora.split(':').map(Number);
-  const minPeso = (hPeso || 8) * 60 + (mPeso || 0);
+  const minPeso = (isNaN(hPeso) ? 8 : hPeso) * 60 + (isNaN(mPeso) ? 0 : mPeso);
 
-  // Janela de tolerância: de minPeso até minPeso + 45 min
-  if (totalMinutosAtual >= minPeso && totalMinutosAtual < minPeso + 45) {
+  // Janela de entrega matinal ampla (até 4 horas após o horário configurado) para garantir entrega
+  if (totalMinutosAtual >= minPeso && totalMinutosAtual < minPeso + 240) {
     const slotPeso = `${hojeDataStr}_peso_lembrete`;
     if (usuario.ultimoAlertaPesoSlot !== slotPeso) {
+      const tituloPeso = '⚖️ Hora de Registrar seu Peso!';
+      const corpoPeso = 'Bom dia! Suba na balança em jejum para acompanhar sua evolução corporal com consistência.';
+
+      // 1. Espelha sempre na Central de Notificações Internas do aplicativo no Firestore
+      try {
+        const notifRef = doc(db, 'usuarios', usuarioId, 'notificacoes_internas', `lembrete_peso_${hojeDataStr}`);
+        await setDoc(
+          notifRef,
+          {
+            id: `lembrete_peso_${hojeDataStr}`,
+            titulo: tituloPeso,
+            mensagem: corpoPeso,
+            categoria: 'aviso',
+            dataIso: agora.toISOString(),
+            lida: false,
+            icone: 'scale',
+            remetente: 'Check-in Corporal',
+            acaoLink: 'peso',
+            acaoTexto: 'Registrar Peso',
+          },
+          { merge: true }
+        );
+      } catch {}
+
+      // 2. Dispara Web Push externo para a barra do celular
       const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-        title: '⚖️ Hora de Registrar seu Peso',
-        body: 'Bom dia! Suba na balança em jejum pela manhã para acompanhar sua evolução com consistência.',
-        tag: 'lembrete-peso',
-        data: { url: '/?tab=jornada', tipo: 'lembrete_peso' }
+        title: tituloPeso,
+        body: corpoPeso,
+        tag: `lembrete-peso-${hojeDataStr}`,
+        silent: emSilencioNoturno,
+        data: {
+          url: '/?tab=peso',
+          tipo: 'lembrete_peso',
+          acao: 'peso',
+          silent: emSilencioNoturno
+        }
       });
+
+      await updateDoc(userDocRef, {
+        ultimoAlertaPesoSlot: slotPeso,
+        atualizadoEm: serverTimestamp()
+      }).catch(() => {});
 
       if (enviou > 0) {
         enviadas += enviou;
-        await updateDoc(userDocRef, {
-          ultimoAlertaPesoSlot: slotPeso,
-          atualizadoEm: serverTimestamp()
-        }).catch(() => {});
         console.log(`[Push] Lembrete de pesagem entregue para o usuário ${usuarioId}`);
-      } else {
-        await updateDoc(userDocRef, {
-          ultimoAlertaPesoSlot: slotPeso,
-          atualizadoEm: serverTimestamp()
-        }).catch(() => {});
       }
     }
   }
@@ -642,8 +772,9 @@ async function avaliarNotificacoesPeso(
  * ----------------------------------------------------------------------------
  * 4. MÓDULO DE AVALIAÇÃO: CICLO DE BIOIMPEDÂNCIA
  * ----------------------------------------------------------------------------
- * Lembra o usuário de repetir o exame de acordo com sua frequência configurada
- * (ex: a cada 30, 45, 60 ou 90 dias) e envia aviso prévio 3 dias antes.
+ * Lembra o usuário de repetir o exame exatamente após 7, 15 ou 30 dias da data da última
+ * Bioimpedância registrada e no horário configurado pelo usuário.
+ * Se não houver registro de Bioimpedância, nenhum alarme é disparado.
  */
 async function avaliarNotificacoesBioimpedancia(
   usuario: any,
@@ -654,87 +785,116 @@ async function avaliarNotificacoesBioimpedancia(
   emSilencioNoturno: boolean
 ): Promise<number> {
   let enviadas = 0;
-  if (emSilencioNoturno) return 0;
-
-  // Janela matinal de lembrete de exame: entre 08:00 e 10:30 (480 a 630 minutos)
-  if (totalMinutosAtual < 480 || totalMinutosAtual > 630) {
-    return 0;
-  }
 
   try {
-    // 1. Busca a configuração de reteste
-    let frequenciaDias = 30;
-    let lembretesAtivos = true;
+    // 1. Busca a configuração de lembrete de bioimpedância (configuracoesJejum.notificacoes + fallback configuracoes/bioimpedancia)
+    const notifs = usuario.configuracoesJejum?.notificacoes || {};
+    let frequenciaDias = Number(notifs.bioimpedanciaIntervaloDias) || 0;
+    let lembretesAtivos =
+      notifs.bioimpedanciaLembreteAtivo !== undefined
+        ? Boolean(notifs.bioimpedanciaLembreteAtivo)
+        : undefined;
+    let bioHora = notifs.bioimpedanciaHora || '';
 
     try {
       const configBioRef = doc(db, 'usuarios', usuarioId, 'configuracoes', 'bioimpedancia');
       const snapConfig = await getDoc(configBioRef);
       if (snapConfig.exists()) {
         const dadosBio = snapConfig.data();
-        if (dadosBio.frequenciaDias) frequenciaDias = Number(dadosBio.frequenciaDias);
-        if (dadosBio.lembretesAtivos !== undefined) lembretesAtivos = Boolean(dadosBio.lembretesAtivos);
+        if (!frequenciaDias && dadosBio.frequenciaDias) {
+          frequenciaDias = Number(dadosBio.frequenciaDias);
+        }
+        if (lembretesAtivos === undefined && dadosBio.lembretesAtivos !== undefined) {
+          lembretesAtivos = Boolean(dadosBio.lembretesAtivos);
+        }
+        if (!bioHora && dadosBio.horaLembrete) {
+          bioHora = String(dadosBio.horaLembrete);
+        }
       }
     } catch {}
 
-    if (!lembretesAtivos) return 0;
+    if (lembretesAtivos === false) return 0;
+    if (frequenciaDias !== 7 && frequenciaDias !== 15 && frequenciaDias !== 30) {
+      frequenciaDias = 15;
+    }
+    if (!bioHora) bioHora = '08:00';
 
-    // 2. Busca o exame mais recente
+    // 2. Busca o exame mais recente (se não houver registro de Bioimpedância, o alarme não deve existir)
     const bioRef = collection(db, 'usuarios', usuarioId, 'bioimpedancias');
     const qBio = query(bioRef, orderBy('dataExame', 'desc'), limit(1));
     const snapBio = await getDocs(qBio);
 
     if (snapBio.empty) {
-      return 0; // Sem exame anterior registrado
+      return 0; // Sem exame anterior registrado -> alarme não existe
     }
 
     const ultimoExame = snapBio.docs[0].data();
-    const dataExameStr = ultimoExame.dataExame; // formato 'YYYY-MM-DD'
+    const dataExameStr = String(ultimoExame.dataExame || '').slice(0, 10); // formato 'YYYY-MM-DD'
     if (!dataExameStr) return 0;
 
-    const dataExame = new Date(dataExameStr);
-    const dataHoje = new Date(hojeDataStr);
-    const diffMs = dataHoje.getTime() - dataExame.getTime();
-    const diasDecorridos = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    // Calcula a data exata do vencimento somando frequenciaDias (7, 15 ou 30) à data do último exame
+    const [anoEx, mesEx, diaEx] = dataExameStr.split('-').map(Number);
+    if (!anoEx || !mesEx || !diaEx) return 0;
 
-    // A. Lembrete no dia do reteste (quando completou a frequência ou nos 3 dias seguintes se não fez)
-    if (diasDecorridos >= frequenciaDias && diasDecorridos <= frequenciaDias + 3) {
+    const dataAlvoObj = new Date(Date.UTC(anoEx, mesEx - 1, diaEx));
+    dataAlvoObj.setUTCDate(dataAlvoObj.getUTCDate() + frequenciaDias);
+    const dataAlvoStr = dataAlvoObj.toISOString().slice(0, 10);
+
+    // Verifica se hoje é a data programada do reteste e se o horário configurado já chegou
+    if (hojeDataStr !== dataAlvoStr) return 0;
+
+    const [hBio, mBio] = bioHora.split(':').map(Number);
+    const minBio = (isNaN(hBio) ? 8 : hBio) * 60 + (isNaN(mBio) ? 0 : mBio);
+
+    if (totalMinutosAtual >= minBio && totalMinutosAtual < minBio + 240) {
       const slotBio = `${hojeDataStr}_bioimpedancia_vencimento`;
       if (usuario.ultimoAlertaBioSlot !== slotBio) {
+        const tituloBio = '🧬 Hora da sua Nova Bioimpedância!';
+        const corpoBio = `Completaram-se ${frequenciaDias} dias desde a sua última bioimpedância. Registre um novo exame para acompanhar sua evolução!`;
+
+        // 1. Espelha na Central de Notificações Internas do aplicativo no Firestore
+        try {
+          const notifRef = doc(db, 'usuarios', usuarioId, 'notificacoes_internas', `lembrete_bio_${hojeDataStr}`);
+          await setDoc(
+            notifRef,
+            {
+              id: `lembrete_bio_${hojeDataStr}`,
+              titulo: tituloBio,
+              mensagem: corpoBio,
+              categoria: 'aviso',
+              dataIso: new Date().toISOString(),
+              lida: false,
+              icone: 'sparkles',
+              remetente: 'Exames & Bioimpedância',
+              acaoLink: 'bioimpedancia',
+              acaoTexto: 'Abrir Exames',
+            },
+            { merge: true }
+          );
+        } catch {}
+
+        // 2. Dispara Web Push externo para a barra do celular
         const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-          title: '⚖️ Hora do seu Novo Exame de Bioimpedância!',
-          body: `Chegou o momento do seu reteste (${frequenciaDias} dias). Acompanhe sua evolução de massa magra e gordura!`,
-          tag: 'lembrete-bioimpedancia',
-          data: { url: '/?tab=bioimpedancia', tipo: 'reteste_bio' }
+          title: tituloBio,
+          body: corpoBio,
+          tag: `lembrete-bioimpedancia-${hojeDataStr}`,
+          silent: emSilencioNoturno,
+          data: {
+            url: '/?tab=bioimpedancia',
+            tipo: 'lembrete_bioimpedancia',
+            acao: 'bioimpedancia',
+            silent: emSilencioNoturno
+          }
         });
+
+        await updateDoc(userDocRef, {
+          ultimoAlertaBioSlot: slotBio,
+          atualizadoEm: serverTimestamp()
+        }).catch(() => {});
 
         if (enviou > 0) {
           enviadas += enviou;
-          await updateDoc(userDocRef, {
-            ultimoAlertaBioSlot: slotBio,
-            atualizadoEm: serverTimestamp()
-          }).catch(() => {});
           console.log(`[Push] Lembrete de bioimpedância entregue para o usuário ${usuarioId}`);
-        }
-      }
-    }
-
-    // B. Aviso prévio 3 dias antes
-    else if (diasDecorridos === (frequenciaDias - 3)) {
-      const slotPreBio = `${hojeDataStr}_bioimpedancia_aviso_previo`;
-      if (usuario.ultimoAlertaBioSlot !== slotPreBio) {
-        const enviou = await enviarNotificacaoParaUsuario(usuarioId, {
-          title: '📅 Seu Reteste de Bioimpedância está Chegando',
-          body: 'Faltam apenas 3 dias para seu próximo exame periódico. Mantenha seu protocolo e hidratação alinhados!',
-          tag: 'aviso-bioimpedancia',
-          data: { url: '/?tab=bioimpedancia', tipo: 'aviso_previo_bio' }
-        });
-
-        if (enviou > 0) {
-          enviadas += enviou;
-          await updateDoc(userDocRef, {
-            ultimoAlertaBioSlot: slotPreBio,
-            atualizadoEm: serverTimestamp()
-          }).catch(() => {});
         }
       }
     }

@@ -53,7 +53,7 @@ export const MenuGroupedInsetList: React.FC<MenuGroupedInsetListProps> = ({
           Identidade & Saúde
         </span>
         <div className="bg-white rounded-3xl border border-slate-100 shadow-2xs divide-y divide-slate-100 overflow-hidden">
-          {/* Dados Pessoais e Documentos */}
+          {/* Dados Pessoais e Contato */}
           <button
             type="button"
             onClick={onAbrirEdicaoPerfil}
@@ -65,21 +65,21 @@ export const MenuGroupedInsetList: React.FC<MenuGroupedInsetListProps> = ({
               </div>
               <div className="text-left">
                 <span className="text-sm font-bold text-[#0B2246] block group-hover:text-[#00C975] transition-colors">
-                  Dados Pessoais & Documentos
+                  Editar Perfil & Contato
                 </span>
                 <span className="text-[11px] text-slate-400">
-                  CPF/CNPJ, WhatsApp, Nascimento e Renda
+                  Nome, CPF, Data de Nascimento e WhatsApp
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {perfil.cpfCnpj ? (
+              {perfil.cpfCnpj && perfil.dataNascimento && perfil.telefone ? (
                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                   Completo
                 </span>
               ) : (
-                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                  Pendente
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  Editar
                 </span>
               )}
               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />

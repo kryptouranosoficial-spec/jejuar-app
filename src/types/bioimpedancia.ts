@@ -73,10 +73,14 @@ export interface RegistroBioimpedancia {
  * Configuração de periodicidade e metas de reteste de bioimpedância.
  */
 export interface ConfiguracaoRetesteBioimpedancia {
-  /** Periodicidade desejada em dias (padrão: 30) */
+  /** Periodicidade desejada em dias (7, 15 ou 30 dias) */
   frequenciaDias: number;
   /** Notificações e alertas ativados */
   lembretesAtivos: boolean;
+  /** Horário programado do lembrete no formato HH:mm (padrão: '08:00') */
+  horaLembrete?: string;
+  /** Som selecionado para o lembrete (padrão: 'Padrão') */
+  somLembrete?: string;
   /** Data limite ou meta estimada para o próximo exame no formato YYYY-MM-DD */
   dataProximoExame?: string;
 }
